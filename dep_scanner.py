@@ -1,12 +1,16 @@
 """
-dep_scanner.py — scan a model provider's adaptor script for missing
-dependencies and install them with UV before the adaptor stage runs.
+dep_scanner.py — scan one of a model provider's scripts (adaptor.py,
+preprocessing.py) for missing dependencies and install them with UV before
+the stage that runs it.
 
-Invoked by the Go pipeline as:  python3 /app/dep_scanner.py <adaptor.py>
+Invoked by the Go pipeline as:  python3 /app/dep_scanner.py <script.py>
 (exit 0 = ready; non-zero = install failed, stderr carries the uv output).
 
 Only third-party packages that are not already importable are installed.
-stdlib modules are filtered via sys.stdlib_module_names. Downloads reach
+stdlib modules are filtered via sys.stdlib_module_names. Imports inside a
+try block that catches ImportError (or a broader exception) are optional by
+the script's own declaration, so they are not installed: the BODH templates
+import e.g. nibabel that way, only for NIfTI inputs. Downloads reach
 pypi.org / files.pythonhosted.org, both download-only in the network policy.
 
 _ALWAYS_PRESENT is trimmed to what THIS
@@ -67,24 +71,49 @@ def _stdlib_names() -> frozenset[str]:
     return frozenset(sys.builtin_module_names)
 
 
-def extract_imports(script_path: Path) -> set[str]:
-    """Parse script_path with ast and return all top-level import root names."""
+# Exception names whose handler makes the imports in its try block optional.
+_OPTIONAL_IMPORT_HANDLERS = frozenset({"ImportError", "ModuleNotFoundError", "Exception", "BaseException"})
+
+
+def _catches_import_error(handler: ast.ExceptHandler) -> bool:
+    if handler.type is None:  # bare except:
+        return True
+    types = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    return any(isinstance(t, ast.Name) and t.id in _OPTIONAL_IMPORT_HANDLERS for t in types)
+
+
+def _import_roots(node) -> set[str]:
+    if isinstance(node, ast.Import):
+        return {alias.name.split(".")[0] for alias in node.names}
+    if isinstance(node, ast.ImportFrom) and node.module:  # relative imports are intra-package
+        return {node.module.split(".")[0]}
+    return set()
+
+
+def scan_imports(script_path: Path) -> tuple[set[str], set[str]]:
+    """Parse script_path with ast; return (required, optional) import root
+    names. Optional ones sit in a try block whose handler catches ImportError."""
     source = script_path.read_text(encoding="utf-8")
     try:
         tree = ast.parse(source, filename=str(script_path))
     except SyntaxError as exc:
         raise ValueError(f"Could not parse {script_path.name}: {exc}") from exc
-
-    names: set[str] = set()
+    guarded: set[int] = set()
+    try_types = tuple(t for t in (getattr(ast, "Try", None), getattr(ast, "TryStar", None)) if t)
     for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                names.add(alias.name.split(".")[0])
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                names.add(node.module.split(".")[0])
-            # relative imports (node.module is None) are intra-package — skip
-    return names
+        if isinstance(node, try_types) and any(_catches_import_error(h) for h in node.handlers):
+            for stmt in node.body:
+                guarded.update(id(sub) for sub in ast.walk(stmt) if isinstance(sub, (ast.Import, ast.ImportFrom)))
+    required: set[str] = set()
+    optional: set[str] = set()
+    for node in ast.walk(tree):
+        (optional if id(node) in guarded else required).update(_import_roots(node))
+    return required, optional - required
+
+
+def extract_imports(script_path: Path) -> set[str]:
+    """The import root names script_path needs (optional imports excluded)."""
+    return scan_imports(script_path)[0]
 
 
 def _is_importable(name: str) -> bool:
@@ -100,10 +129,10 @@ def install_missing_deps(script_path: Path) -> tuple[list[str], list[str]]:
     Raises RuntimeError with captured stderr if uv exits non-zero.
     """
     stdlib = _stdlib_names()
-    raw_imports = extract_imports(script_path)
+    raw_imports, optional = scan_imports(script_path)
 
     to_install: list[str] = []
-    skipped: list[str] = []
+    skipped: list[str] = [f"{name} (optional: imported under try/except ImportError)" for name in sorted(optional)]
 
     for name in sorted(raw_imports):
         if name in stdlib:
@@ -134,7 +163,7 @@ def install_missing_deps(script_path: Path) -> tuple[list[str], list[str]]:
 
     if result.returncode != 0:
         raise RuntimeError(
-            f"UV failed to install adaptor dependencies "
+            f"UV failed to install {script_path.name} dependencies "
             f"({', '.join(to_install)}):\n{result.stderr}"
         )
 

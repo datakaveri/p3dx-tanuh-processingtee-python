@@ -14,6 +14,8 @@ model provider's adaptor (stage 2) and the bucket evaluator (stage 3) do that.
                 TorchScript:  model.pt   (saved with torch.jit.save)
                 Hugging Face: hf/        (config.json, *.safetensors, preprocessor_config.json)
                 ONNX / TorchScript may also hold input_spec.json, uploaded next to the model
+  --preprocessing  optional: the model owner's preprocessing.py (ONNX / TorchScript). It
+                replaces the platform's input preparation below; see "Preprocessing script"
   --inputs      one "<id>\t<path>" line per sample, in ground-truth order; <id> is
                 the sample's path in the dataset (a line without a tab: id = file name)
   --output-dir  receives raw_outputs.npz (`ids` + one array per model output) and meta.json
@@ -28,8 +30,8 @@ model provider's adaptor (stage 2) and the bucket evaluator (stage 3) do that.
                 boxes from the model's input size back to the original image. The image
                 is resized to H x W without keeping its aspect ratio (no letterbox).
 
-Platform input contract (ONNX and TorchScript) — the platform turns every file
-into exactly the tensor the model declares, so no preprocessing script exists:
+Platform input contract (ONNX and TorchScript, without a preprocessing script) —
+the platform turns every file into exactly the tensor the model declares:
   1. decode:   by content, not extension. DICOM -> middle frame, MONOCHROME1
                inverted, min-max to 0..255, grey -> 3 channels; images (JPEG, PNG,
                TIFF, BMP, WebP, GIF) -> RGB uint8
@@ -37,7 +39,21 @@ into exactly the tensor the model declares, so no preprocessing script exists:
   3. channels: 1 (grey) or 3 (RGB) and layout NCHW or NHWC, as the model declares
   4. dtype:    float -> [0,1]; uint8 -> 0..255
 Anything model-specific (normalisation, colour balancing, channel order) must be
-inside the model. Hugging Face models use their own preprocessor_config.json instead.
+inside the model, or done by a preprocessing script. Hugging Face models use their
+own preprocessor_config.json instead.
+
+Preprocessing script (--preprocessing, ONNX and TorchScript only):
+  The script defines preprocess(x) and returns ONE model input, without the batch
+  axis (e.g. float32 [3, 256, 256] for an NCHW model). It replaces steps 1-4 above.
+  What x is comes from the script's INPUT["source"] setting (the BODH template's):
+    "array" (or no INPUT)  the file decoded as in step 1: uint8 (H, W, 3) RGB
+    "path" / "auto"        the file's path as a str (the script decodes it itself,
+                           e.g. to read DICOM headers)
+    "bytes"                the file's raw bytes
+  The result must match the model's declared input (channels, height, width where
+  fixed) and be finite; it is cast to the model's dtype. A leading batch axis of 1
+  is dropped. A script that fails to load, raises, or returns the wrong shape exits
+  with EXIT_PREPROCESS, so the job is reported as a pre-processing error.
 
 Where the declaration comes from (later wins):
   ONNX         the model's input signature, metadata_props key "tanuh.resize",
@@ -74,6 +90,8 @@ import numpy as np
 EXIT_CUDA = 11
 EXIT_MODEL = 13
 EXIT_DECODE = 14
+EXIT_PREPROCESS = 15
+PREPROCESS_SOURCES = ("array", "path", "bytes", "auto")
 
 DEFAULT_BATCH = 8
 DICOM_EXTS = {".dcm", ".dicom", ".dic"}
@@ -93,12 +111,30 @@ class ModelError(Exception):
     """The submitted model could not be loaded/run, or declares an unsupported input."""
 
 
+class PreprocessError(Exception):
+    """The model owner's preprocessing script failed or returned an unusable input."""
+
+
 class DecodeError(Exception):
     """An input file could not be decoded."""
 
 
 def log(msg):
     print(f"[infer] {msg}", flush=True)
+
+
+def gpu_present():
+    """True when a CUDA device is usable. The GPU build of onnxruntime lists
+    CUDAExecutionProvider even on a machine with no GPU, and creating a CUDA
+    session there kills the process with SIGSEGV (no Python error), so the
+    provider list must not be trusted on its own."""
+    if os.environ.get("TANUH_FORCE_CPU") == "1":
+        return False
+    try:
+        import torch
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return any(Path("/dev").glob("nvidia[0-9]*"))
 
 
 def is_cuda_error(exc):
@@ -187,11 +223,14 @@ class InputSpec:
     dtype: str                 # "float32", "float16" or "uint8"
     resize: str                # "bilinear" or "bicubic"
     fixed_batch: int | None    # set when the model only accepts one batch size
+    # True when a preprocessing script prepares the input: a size the model
+    # leaves dynamic (0) is then the script's choice, not an error.
+    preprocessed: bool = False
 
     def validate(self):
         if self.channels not in (1, 3):
             raise ModelError(f"input must have 1 or 3 channels, declared {self.channels}")
-        if self.height <= 0 or self.width <= 0:
+        if not self.preprocessed and (self.height <= 0 or self.width <= 0):
             raise ModelError("input height and width must be fixed positive sizes")
         if self.layout not in ("NCHW", "NHWC"):
             raise ModelError(f"layout must be NCHW or NHWC, declared {self.layout!r}")
@@ -356,7 +395,7 @@ def load_onnx_model_bytes(model_path, weights_path):
 class OnnxRuntime:
     name = "onnxruntime"
 
-    def __init__(self, model_dir):
+    def __init__(self, model_dir, preprocessed=False):
         import onnxruntime as ort
         model_path = model_dir / "model.onnx"
         if not model_path.exists():
@@ -365,8 +404,9 @@ class OnnxRuntime:
         try:
             model_bytes = load_onnx_model_bytes(model_path, weights if weights.exists() else None)
             available = set(ort.get_available_providers())
-            providers = [p for p in ("CUDAExecutionProvider", "CPUExecutionProvider") if p in available] \
-                or ["CPUExecutionProvider"]
+            providers = ["CPUExecutionProvider"]
+            if "CUDAExecutionProvider" in available and gpu_present():
+                providers.insert(0, "CUDAExecutionProvider")
             self.session = ort.InferenceSession(model_bytes, providers=providers)
         except ModelError:
             raise
@@ -385,12 +425,12 @@ class OnnxRuntime:
         declared = parse_input_spec({"resize": meta["tanuh.resize"]}, "metadata tanuh.resize") \
             if "tanuh.resize" in meta else {}
         uploaded, uploaded_source = read_uploaded_spec(model_dir)
-        self.spec = self._spec(inputs[0], {**declared, **uploaded})
+        self.spec = self._spec(inputs[0], {**declared, **uploaded}, preprocessed)
         self.spec_source = " + ".join(["model input signature"] + (["metadata tanuh.resize"] if declared else [])
                                       + ([uploaded_source] if uploaded_source else []))
 
     @staticmethod
-    def _spec(inp, given):
+    def _spec(inp, given, preprocessed=False):
         """The model's input signature, completed (dynamic sizes) or refined
         (resize) by the declared spec. A spec that contradicts a fixed
         dimension of the model is an error, not a silent override."""
@@ -416,11 +456,14 @@ class OnnxRuntime:
                 raise ModelError(f"the input spec says {name}={given[name]} but the model's input is {shape}")
         c = c or given.get("channels", 3)
         h, w = h or given.get("height"), w or given.get("width")
-        if not h or not w:
+        if preprocessed:
+            h, w = h or 0, w or 0  # 0 = the preprocessing script decides
+        elif not h or not w:
             raise ModelError(f"the model's input {shape} has a dynamic height/width; give the size in "
                              f"{SPEC_FILE} (e.g. {{\"input_size\": [224, 224]}})")
         fixed = dims[0]
-        return InputSpec(c, h, w, layout, dtype, given.get("resize") or "bilinear", fixed).validate()
+        return InputSpec(c, h, w, layout, dtype, given.get("resize") or "bilinear", fixed,
+                         preprocessed).validate()
 
     def run(self, batch):
         outs = self.session.run(None, {self.input_name: batch})
@@ -449,20 +492,23 @@ def read_embedded_spec(model_path):
     return {}, None
 
 
-def torchscript_spec(model_dir, model_path):
+def torchscript_spec(model_dir, model_path, preprocessed=False):
     """TorchScript files do not record their input size, so it comes from an
     embedded declaration and/or input_spec.json uploaded next to the model
     (the uploaded one wins). Everything but the size has a default."""
     embedded, embedded_source = read_embedded_spec(model_path)
     uploaded, uploaded_source = read_uploaded_spec(model_dir)
     spec = {"channels": 3, "layout": "NCHW", "dtype": "float32", "resize": "bilinear", **embedded, **uploaded}
+    if preprocessed:
+        spec.setdefault("height", 0)  # the preprocessing script decides
+        spec.setdefault("width", 0)
     if "height" not in spec or "width" not in spec:
         raise ModelError("the TorchScript model's input size is unknown: give it on the submit form "
                          f"(uploaded as {SPEC_FILE}, e.g. {{\"input_size\": [224, 224]}}) or embed it with "
                          "torch.jit.save(m, f, _extra_files={'tanuh.json': '{\"input_size\": [224, 224]}'})")
     source = " + ".join(s for s in (embedded_source, uploaded_source) if s)
     return InputSpec(spec["channels"], spec["height"], spec["width"], spec["layout"], spec["dtype"],
-                     spec["resize"], None).validate(), source
+                     spec["resize"], None, preprocessed).validate(), source
 
 
 def flatten_torch_outputs(out):
@@ -486,12 +532,12 @@ def flatten_torch_outputs(out):
 class TorchScriptRuntime:
     name = "torch.jit"
 
-    def __init__(self, model_dir):
+    def __init__(self, model_dir, preprocessed=False):
         import torch
         model_path = model_dir / "model.pt"
         if not model_path.exists():
             raise ModelError("model.pt not found")
-        self.spec, self.spec_source = torchscript_spec(model_dir, model_path)
+        self.spec, self.spec_source = torchscript_spec(model_dir, model_path, preprocessed)
         self.torch = torch
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         try:
@@ -534,7 +580,10 @@ def validate_hf_dir(hf_dir):
 class HuggingFaceRuntime:
     name = "transformers"
 
-    def __init__(self, model_dir):
+    def __init__(self, model_dir, preprocessed=False):
+        if preprocessed:
+            raise ModelError("a preprocessing script is not used with Hugging Face models; "
+                             "their preprocessor_config.json is the preprocessing")
         hf_dir = model_dir / "hf"
         config = validate_hf_dir(hf_dir)
         os.environ["HF_HUB_OFFLINE"] = "1"
@@ -569,6 +618,83 @@ class HuggingFaceRuntime:
         return {"logits": out.logits.detach().float().cpu().numpy()}
 
 
+class Preprocessor:
+    """The model owner's preprocessing.py (see "Preprocessing script" above)."""
+
+    def __init__(self, path):
+        import importlib.util
+        path = Path(path)
+        try:
+            spec = importlib.util.spec_from_file_location("tanuh_preprocessing", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except BaseException as exc:  # SystemExit from a script's own checks too
+            raise PreprocessError(f"preprocessing.py failed to load: {type(exc).__name__}: {exc}") from exc
+        self.fn = getattr(module, "preprocess", None)
+        if not callable(self.fn):
+            raise PreprocessError("preprocessing.py has no preprocess(x) function")
+        settings = getattr(module, "INPUT", None)
+        source = settings.get("source", "array") if isinstance(settings, dict) else "array"
+        source = str(source).strip().lower()
+        if source not in PREPROCESS_SOURCES:
+            raise PreprocessError(f"preprocessing.py INPUT[\"source\"] is {source!r}; "
+                                  f"use one of {', '.join(PREPROCESS_SOURCES)}")
+        self.declared_source = source
+        # "auto" detects from the Python type; a path keeps the file's metadata
+        # (DICOM rescale, MONOCHROME1, slice order) available to the script.
+        self.source = "path" if source == "auto" else source
+
+    def sample(self, path, spec, decoded=None):
+        """One model input (no batch axis) for the file at path. decoded is the
+        file already decoded to RGB, when the caller has it."""
+        path = Path(path)
+        if self.source == "array":
+            x = decoded if decoded is not None else decode(path)
+        elif self.source == "path":
+            x = str(path)
+        else:
+            x = path.read_bytes()
+        try:
+            out = self.fn(x)
+        except Exception as exc:
+            raise PreprocessError(f"preprocess() failed on {path.name}: {type(exc).__name__}: {exc}") from exc
+        return conform_sample(out, spec, path.name)
+
+
+def conform_sample(out, spec, name):
+    """Check a preprocessing result against the model's declared input and
+    cast it to the model's dtype."""
+    try:
+        arr = np.asarray(out)
+    except Exception as exc:
+        raise PreprocessError(f"preprocess() returned {type(out).__name__} for {name}, "
+                              f"not an array") from exc
+    if arr.dtype == object or not (np.issubdtype(arr.dtype, np.number) or arr.dtype == bool):
+        raise PreprocessError(f"preprocess() returned a {arr.dtype} array for {name}; expected numbers")
+    if arr.ndim == 4 and arr.shape[0] == 1:
+        arr = arr[0]  # a batch of one: keep the sample
+    if spec.layout == "NCHW":
+        want, labels = (spec.channels, spec.height, spec.width), ("channels", "height", "width")
+    else:
+        want, labels = (spec.height, spec.width, spec.channels), ("height", "width", "channels")
+    shown = tuple(d if d else "any" for d in want)
+    if arr.ndim != 3:
+        raise PreprocessError(f"preprocess() returned shape {list(arr.shape)} for {name}; the model "
+                              f"takes {spec.layout} input, so one sample must be {list(shown)}")
+    for got, exp, label in zip(arr.shape, want, labels):
+        if exp and got != exp:
+            raise PreprocessError(f"preprocess() returned shape {list(arr.shape)} for {name}; the model "
+                                  f"expects {list(shown)} ({spec.layout}): {label} {got} != {exp}")
+    if spec.dtype == "uint8":
+        if not np.issubdtype(arr.dtype, np.integer):
+            raise PreprocessError(f"the model takes uint8 input but preprocess() returned {arr.dtype} for {name}")
+        return np.ascontiguousarray(np.clip(arr, 0, 255).astype(np.uint8))
+    arr = arr.astype(np.float16 if spec.dtype == "float16" else np.float32)
+    if not np.isfinite(arr).all():
+        raise PreprocessError(f"preprocess() returned NaN or infinite values for {name}")
+    return np.ascontiguousarray(arr)
+
+
 RUNTIMES = {"onnx": OnnxRuntime, "torchscript": TorchScriptRuntime, "huggingface": HuggingFaceRuntime}
 
 
@@ -588,23 +714,34 @@ def safe_output_names(names):
     return mapping
 
 
-def run_inference(runtime, paths, batch_size):
+def stack_samples(samples):
+    try:
+        return np.stack(samples, axis=0)
+    except ValueError as exc:
+        shapes = sorted({tuple(s.shape) for s in samples})
+        raise PreprocessError(f"preprocess() returned different shapes within one batch: {shapes}") from exc
+
+
+def run_inference(runtime, paths, batch_size, pre=None):
     """Decode, prepare and run every input; returns {output_name: [N, ...] array}."""
     fixed = runtime.spec.fixed_batch if runtime.spec else None
     step = fixed or batch_size
     parts = {}
     for off in range(0, len(paths), step):
         chunk = paths[off: off + step]
-        images = [decode(p) for p in chunk]
+        if pre is not None:
+            samples = [pre.sample(p, runtime.spec) for p in chunk]
+        else:
+            images = [decode(p) for p in chunk]
+            samples = None if runtime.spec is None else [to_tensor(img, runtime.spec) for img in images]
         try:
-            if runtime.spec is None:
+            if samples is None:
                 out = runtime.run(images)
             else:
-                samples = [to_tensor(img, runtime.spec) for img in images]
                 if fixed and len(samples) < fixed:
                     samples += [np.zeros_like(samples[0])] * (fixed - len(samples))
-                out = runtime.run(np.stack(samples, axis=0))
-        except (ModelError, DecodeError):
+                out = runtime.run(stack_samples(samples))
+        except (ModelError, DecodeError, PreprocessError):
             raise
         except Exception as exc:
             if is_cuda_error(exc):
@@ -623,7 +760,7 @@ def run_inference(runtime, paths, batch_size):
         raise ModelError(f"model output shape changes between batches: {exc}") from exc
 
 
-def run_per_sample(runtime, paths):
+def run_per_sample(runtime, paths, pre=None):
     """--per-sample: one input at a time. Returns ({output_name: (flat, shapes, offsets)},
     orig_hw) where input i's output is flat[offsets[i]:offsets[i+1]].reshape(shapes[i])."""
     fixed = runtime.spec.fixed_batch if runtime.spec else None
@@ -636,12 +773,17 @@ def run_per_sample(runtime, paths):
     for i, path in enumerate(paths):
         img = decode(path)
         orig_hw.append(img.shape[:2])
+        sample = None
+        if pre is not None:
+            sample = pre.sample(path, runtime.spec, decoded=img)
+        elif runtime.spec is not None:
+            sample = to_tensor(img, runtime.spec)
         try:
-            if runtime.spec is None:
+            if sample is None:
                 out = runtime.run([img])
             else:
-                out = runtime.run(to_tensor(img, runtime.spec)[None])
-        except (ModelError, DecodeError):
+                out = runtime.run(sample[None])
+        except (ModelError, DecodeError, PreprocessError):
             raise
         except Exception as exc:
             if is_cuda_error(exc):
@@ -697,6 +839,9 @@ def main():
     ap.add_argument("--batch-size", type=int, default=DEFAULT_BATCH)
     ap.add_argument("--per-sample", action="store_true",
                     help="one input at a time; outputs may differ in size per input (detection)")
+    ap.add_argument("--preprocessing",
+                    help="the model owner's preprocessing.py (ONNX / TorchScript); replaces the "
+                         "platform's resize and scaling")
     args = ap.parse_args()
 
     started = time.perf_counter()
@@ -706,15 +851,23 @@ def main():
         return 1
     log(f"format={args.format} inputs={len(paths)}")
 
+    pre = None
     try:
-        runtime = RUNTIMES[args.format](Path(args.model_dir))
+        runtime = RUNTIMES[args.format](Path(args.model_dir), preprocessed=bool(args.preprocessing))
         log(f"runtime={runtime.name} {runtime.version} device={runtime.device} providers={runtime.providers}")
         if runtime.spec:
             log(f"input spec: {asdict(runtime.spec)} (from {runtime.spec_source})")
+        if args.preprocessing:
+            pre = Preprocessor(args.preprocessing)
+            log(f"preprocessing script: preprocess() gets the file as {pre.source!r} "
+                f"(INPUT source {pre.declared_source!r})")
         if args.per_sample:
-            ragged, orig_hw = run_per_sample(runtime, paths)
+            ragged, orig_hw = run_per_sample(runtime, paths, pre)
         else:
-            outputs = run_inference(runtime, paths, max(1, args.batch_size))
+            outputs = run_inference(runtime, paths, max(1, args.batch_size), pre)
+    except PreprocessError as exc:
+        log(f"PREPROCESSING ERROR: {exc}")
+        return EXIT_PREPROCESS
     except DecodeError as exc:
         log(f"DATASET DECODE ERROR: {exc}")
         return EXIT_DECODE
@@ -753,6 +906,7 @@ def main():
         "per_sample": bool(args.per_sample),
         "input_spec": asdict(runtime.spec) if runtime.spec else None,
         "input_spec_source": runtime.spec_source,
+        "preprocessing": {"source": pre.source, "declared_source": pre.declared_source} if pre else None,
         "outputs": {names[k]: {"model_name": k, "shape": list(v.shape)} for k, v in outputs.items()},
         "elapsed_seconds": round(time.perf_counter() - started, 3),
     }

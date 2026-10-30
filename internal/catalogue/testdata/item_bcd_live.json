@@ -1,0 +1,323 @@
+{
+  "type": "dx:controlPlane:success",
+  "title": "Success",
+  "detail": "Success: Item fetched successfully",
+  "result": [
+    {
+      "modality": "DICOM mammography (grayscale)",
+      "class_names": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "type": [
+        "adex:DataBank"
+      ],
+      "outputDataType": "Ordinal 4-class breast density label",
+      "datasetMetrics": {
+        "problemStatement": "multiclass_classification",
+        "modality": "DICOM mammography (grayscale)",
+        "volume": "200 patient records",
+        "output": {
+          "dataType": "Ordinal 4-class breast density label",
+          "format": "Excel / CSV",
+          "maxFileSize": "5 MB",
+          "columns": [
+            "new_file_path",
+            "tissueden"
+          ],
+          "description": "One row per case: new_file_path is the DICOM's relative path and tissueden is an integer 0-3 where A=0, B=1, C=2, D=3. Every case must have exactly one row; a class is always required, so emit the most likely class rather than leaving a row empty."
+        },
+        "primaryMetric": "macro_f1",
+        "secondaryMetric": "qwk_quadratic_weight_kappa",
+        "inputDataType": "Single-channel (grayscale) mammography image",
+        "inputSize": "1 DICOM file per subject; dimensions vary per study (see DICOM Rows/Columns tags)",
+        "inputMaxFileSize": "50 MB per DICOM file",
+        "inputFormat": "DICOM (.dcm)",
+        "inputOrganization": "Files in mammogram_benchmark/subject_000XX/; ground-truth labels in mammogram_benchmark_labels.xlsx",
+        "inputPreprocessing": "None applied.",
+        "outputDataType": "Ordinal 4-class breast density label",
+        "outputFormat": "Excel / CSV",
+        "outputMaxFileSize": "5 MB",
+        "outputColumns": "new_file_path, tissueden",
+        "outputDescription": "One row per case: new_file_path is the DICOM's relative path and tissueden is an integer 0-3 where A=0, B=1, C=2, D=3. Every case must have exactly one row; a class is always required, so emit the most likely class rather than leaving a row empty.",
+        "customMetricLabels": {
+          "macro_f1": "Macro F1",
+          "qwk_quadratic_weight_kappa": "QWK (Quadratic Weight Kappa)",
+          "accuracy": "Accuracy",
+          "macro_f2": "Macro F2",
+          "weighted_f2": "Weighted F2",
+          "sensitivity_recall": "Sensitivity (Recall)",
+          "specificity_true_negative_rate": "Specificity (True Negative Rate)",
+          "ppv_positive_predictive_value": "PPV (Positive Predictive Value)",
+          "npv_negative_predictive_value": "NPV (Negative Predictive Value)",
+          "auc_area_under_curve": "AUC (Area Under Curve)"
+        },
+        "input": {
+          "dataType": "Single-channel (grayscale) mammography image",
+          "size": "1 DICOM file per subject; dimensions vary per study (see DICOM Rows/Columns tags)",
+          "maxFileSize": "50 MB per DICOM file",
+          "format": "DICOM (.dcm)",
+          "organization": "Files in mammogram_benchmark/subject_000XX/; ground-truth labels in mammogram_benchmark_labels.xlsx",
+          "preprocessing": "None applied."
+        },
+        "distributions": [
+          {
+            "label": "Density class balance (all cases)",
+            "categories": [
+              {
+                "name": "A",
+                "count": 56
+              },
+              {
+                "name": "B",
+                "count": 59
+              },
+              {
+                "name": "C",
+                "count": 60
+              },
+              {
+                "name": "D",
+                "count": 25
+              }
+            ],
+            "note": "A: almost entirely fatty · B: scattered fibroglandular · C: heterogeneously dense · D: extremely dense.",
+            "total": 200
+          },
+          {
+            "label": "Computed Radiography (CR)",
+            "categories": [
+              {
+                "name": "A",
+                "count": 36
+              },
+              {
+                "name": "B",
+                "count": 39
+              },
+              {
+                "name": "C",
+                "count": 40
+              },
+              {
+                "name": "D",
+                "count": 9
+              }
+            ],
+            "total": 124
+          },
+          {
+            "label": "Digital Radiography (DR)",
+            "categories": [
+              {
+                "name": "A",
+                "count": 20
+              },
+              {
+                "name": "B",
+                "count": 20
+              },
+              {
+                "name": "C",
+                "count": 20
+              },
+              {
+                "name": "D",
+                "count": 16
+              }
+            ],
+            "total": 76
+          }
+        ],
+        "macro_f1": 0,
+        "qwk_quadratic_weight_kappa": "-1-1",
+        "accuracy": 0,
+        "macro_f2": 0,
+        "weighted_f2": 0,
+        "sensitivity_recall": 0,
+        "specificity_true_negative_rate": 0,
+        "ppv_positive_predictive_value": 0,
+        "npv_negative_predictive_value": 0,
+        "auc_area_under_curve": 0
+      },
+      "organizationId": "6c8e70a4-cca4-43db-92be-45f4d1ccc0bd",
+      "output": "Density class A, B, C, or D (ordinal 0-3)",
+      "inputPreprocessing": "None applied.",
+      "lastUpdated": "2026-10-01T19:23:51+0530",
+      "id": "12ff1e0d-b32a-40e1-9868-5fd1f89ed30f",
+      "outputFormat": "Excel / CSV",
+      "publishStatus": "ACTIVE",
+      "yearRange": "2026-2026",
+      "shortDescription": "Gold-standard reference dataset for breast density classification. 200 held-out mammography cases with radiologist-assigned BI-RADS density labels A through D.",
+      "verifiedBy": "May Org Admin",
+      "inputFormat": "DICOM (.dcm)",
+      "dataBankType": "Structured",
+      "secondaryMetric": "qwk_quadratic_weight_kappa",
+      "distributions": [
+        {
+          "label": "Density class balance (all cases)",
+          "categories": [
+            {
+              "name": "A",
+              "count": 56
+            },
+            {
+              "name": "B",
+              "count": 59
+            },
+            {
+              "name": "C",
+              "count": 60
+            },
+            {
+              "name": "D",
+              "count": 25
+            }
+          ],
+          "note": "A: almost entirely fatty · B: scattered fibroglandular · C: heterogeneously dense · D: extremely dense.",
+          "total": 200
+        },
+        {
+          "label": "Computed Radiography (CR)",
+          "categories": [
+            {
+              "name": "A",
+              "count": 36
+            },
+            {
+              "name": "B",
+              "count": 39
+            },
+            {
+              "name": "C",
+              "count": 40
+            },
+            {
+              "name": "D",
+              "count": 9
+            }
+          ],
+          "total": 124
+        },
+        {
+          "label": "Digital Radiography (DR)",
+          "categories": [
+            {
+              "name": "A",
+              "count": 20
+            },
+            {
+              "name": "B",
+              "count": 20
+            },
+            {
+              "name": "C",
+              "count": 20
+            },
+            {
+              "name": "D",
+              "count": 16
+            }
+          ],
+          "total": 76
+        }
+      ],
+      "tags": [
+        "breast density",
+        "mammography",
+        "BI-RADS",
+        "DICOM",
+        "multiclass classification",
+        "medical imaging",
+        "benchmark"
+      ],
+      "itemCreatedAt": "2026-10-01T19:23:51+0530",
+      "volume": "200 patient records",
+      "license": "Open Government License, India",
+      "concepts": [
+        "",
+        "Administration"
+      ],
+      "resourceServer": [
+        {
+          "id": "fb54d575-a8e2-47d1-ab34-1a89cb907ff1",
+          "name": "FILE",
+          "queryTypes": [
+            "ATTR"
+          ],
+          "accessTypes": [
+            "ATTR"
+          ],
+          "type": "file",
+          "url": "bodh.tanuh.ai/"
+        }
+      ],
+      "name": "Breast Cancer",
+      "inputOrganization": "Files in mammogram_benchmark/subject_000XX/; ground-truth labels in mammogram_benchmark_labels.xlsx",
+      "accessPolicy": "OPEN",
+      "outputMaxFileSize": "5 MB",
+      "metrics": {
+        "views": 23.0,
+        "downloads": 0,
+        "likes": 0,
+        "dislikes": 0
+      },
+      "description": "Gold-standard reference dataset for breast density classification (BCD_BenchmarkDataset_JUN2026). 200 held-out mammography cases, one DICOM per subject, each with a radiologist-assigned BI-RADS density label A-D (A=0, B=1, C=2, D=3). 124 cases come from Computed Radiography and 76 from Digital Radiography. Class counts are A 56, B 59, C 60, D 25. No pre-processing applied. EVALUATION-ONLY DATASET: held out from any training pool - do not use for training.",
+      "datasetOutput": {
+        "dataType": "Ordinal 4-class breast density label",
+        "format": "Excel / CSV",
+        "maxFileSize": "5 MB",
+        "columns": [
+          "new_file_path",
+          "tissueden"
+        ],
+        "description": "One row per case: new_file_path is the DICOM's relative path and tissueden is an integer 0-3 where A=0, B=1, C=2, D=3. Every case must have exactly one row; a class is always required, so emit the most likely class rather than leaving a row empty."
+      },
+      "industry": "Health",
+      "inputMaxFileSize": "50 MB per DICOM file",
+      "geoCoverage": "na",
+      "inputSize": "1 DICOM file per subject; dimensions vary per study (see DICOM Rows/Columns tags)",
+      "itemStatus": "ACTIVE",
+      "croissant": "{\"@context\":{\"@language\":\"en\",\"@vocab\":\"https://schema.org/\",\"cr\":\"http://mlcommons.org/croissant/\",\"dct\":\"http://purl.org/dc/terms/\",\"sc\":\"https://schema.org/\",\"citeAs\":\"cr:citeAs\",\"column\":\"cr:column\",\"conformsTo\":\"dct:conformsTo\",\"data\":{\"@id\":\"cr:data\",\"@type\":\"@json\"},\"dataType\":{\"@id\":\"cr:dataType\",\"@type\":\"@vocab\"},\"examples\":{\"@id\":\"cr:examples\",\"@type\":\"@json\"},\"extract\":\"cr:extract\",\"field\":\"cr:field\",\"fileObject\":\"cr:fileObject\",\"fileProperty\":\"cr:fileProperty\",\"fileSet\":\"cr:fileSet\",\"format\":\"cr:format\",\"includes\":\"cr:includes\",\"isLiveDataset\":\"cr:isLiveDataset\",\"jsonPath\":\"cr:jsonPath\",\"key\":\"cr:key\",\"md5\":\"cr:md5\",\"parentField\":\"cr:parentField\",\"path\":\"cr:path\",\"rai\":\"http://mlcommons.org/croissant/RAI/\",\"recordSet\":\"cr:recordSet\",\"references\":\"cr:references\",\"regex\":\"cr:regex\",\"repeated\":\"cr:repeated\",\"replace\":\"cr:replace\",\"samplingRate\":\"cr:samplingRate\",\"separator\":\"cr:separator\",\"source\":\"cr:source\",\"subField\":\"cr:subField\",\"equivalentProperty\":\"cr:equivalentProperty\",\"transform\":\"cr:transform\",\"tanuh\":\"https://benchmark.tanuh.ai/schema/1.0#\",\"platform\":\"tanuh:platform\"},\"@type\":\"sc:Dataset\",\"conformsTo\":\"http://mlcommons.org/croissant/1.0\",\"name\":\"Breast Cancer\",\"description\":\"Gold-standard reference dataset for breast density classification (BCD_BenchmarkDataset_JUN2026). 200 held-out mammography cases, one DICOM per subject, each with a radiologist-assigned BI-RADS density label A-D (A=0, B=1, C=2, D=3). 124 cases come from Computed Radiography and 76 from Digital Radiography. Class counts are A 56, B 59, C 60, D 25. No pre-processing applied. EVALUATION-ONLY DATASET: held out from any training pool - do not use for training.\",\"keywords\":[\"breast density\",\"mammography\",\"BI-RADS\",\"DICOM\",\"multiclass classification\",\"medical imaging\",\"benchmark\"],\"inLanguage\":\"en\",\"license\":\"https://example.org/tanuh-internal-license\",\"version\":\"1.0.0\",\"datePublished\":\"2026-06-01\",\"creator\":{\"@type\":\"sc:Organization\",\"name\":\"TANUH\"},\"citeAs\":\"TANUH. (2026). BCD Benchmark Dataset JUN2026 [Data set].\",\"distribution\":[{\"@type\":\"cr:FileSet\",\"@id\":\"mammograms\",\"name\":\"mammogram_benchmark\",\"description\":\"200 mammography DICOM files, one per subject.\",\"encodingFormat\":\"application/dicom\",\"includes\":\"mammogram_benchmark/subject_*/*.dcm\"},{\"@type\":\"cr:FileObject\",\"@id\":\"labels-csv\",\"name\":\"mammogram_benchmark_labels.xlsx\",\"description\":\"Ground-truth labels, one row per case.\",\"contentUrl\":\"mammogram_benchmark_labels.xlsx\",\"encodingFormat\":\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\",\"sha256\":\"TBD\"}],\"recordSet\":[{\"@type\":\"cr:RecordSet\",\"@id\":\"test_points\",\"name\":\"test_points\",\"description\":\"One record per test case. Per-case rows are not embedded in this file; populate `data` from the shipped labels file before release.\",\"field\":[{\"@type\":\"cr:Field\",\"@id\":\"test_points/file_path\",\"name\":\"file_path\",\"dataType\":\"sc:Text\",\"source\":{\"fileObject\":{\"@id\":\"labels-csv\"},\"extract\":{\"column\":\"new_file_path\"}}},{\"@type\":\"cr:Field\",\"@id\":\"test_points/tissueden\",\"name\":\"tissueden\",\"dataType\":\"sc:Text\",\"source\":{\"fileObject\":{\"@id\":\"labels-csv\"},\"extract\":{\"column\":\"tissueden\"}}}]}]}",
+      "datasetInput": {
+        "dataType": "Single-channel (grayscale) mammography image",
+        "size": "1 DICOM file per subject; dimensions vary per study (see DICOM Rows/Columns tags)",
+        "maxFileSize": "50 MB per DICOM file",
+        "format": "DICOM (.dcm)",
+        "organization": "Files in mammogram_benchmark/subject_000XX/; ground-truth labels in mammogram_benchmark_labels.xlsx",
+        "preprocessing": "None applied."
+      },
+      "uploadedBy": "dekovo2227@bittnex.com",
+      "inputDataType": "Single-channel (grayscale) mammography image",
+      "uploadFrequency": "OneTime",
+      "primaryMetric": "macro_f1",
+      "problemStatement": "multiclass_classification",
+      "@context": "https://voc.v2.test.iudx.io/",
+      "organizationType": "Public",
+      "dataUploadStatus": true,
+      "organization": "TANUH",
+      "ownerUserId": "33090870-12af-4aa4-b500-26c0954549e8",
+      "outputColumns": "new_file_path, tissueden",
+      "dataSample": {
+        "info": {
+          "_postman_id": "52ddcd25-f6d8-423d-922e-42bbc3dae156",
+          "name": "New Collection",
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        }
+      },
+      "outputDescription": "One row per case: new_file_path is the DICOM's relative path and tissueden is an integer 0-3 where A=0, B=1, C=2, D=3. Every case must have exactly one row; a class is always required, so emit the most likely class rather than leaving a row empty.",
+      "fileFormat": "dcm",
+      "fileSize": "3022.47MB"
+    }
+  ],
+  "paginationInfo": {
+    "page": 1,
+    "size": 1,
+    "totalCount": 1,
+    "totalPages": 1,
+    "hasNext": false,
+    "hasPrevious": false
+  }
+}

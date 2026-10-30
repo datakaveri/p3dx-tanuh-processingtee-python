@@ -10,10 +10,15 @@ will receive.
     python3 check_model.py --format torchscript --model model.pt [--input-spec input_spec.json]
     python3 check_model.py --format huggingface --model model.zip
     python3 check_model.py ... --image sample.jpg     (use a real image instead of zeros)
+    python3 check_model.py ... --preprocessing preprocessing.py --image sample.jpg
 
 --input-spec is the input_spec.json you will upload with an ONNX or TorchScript
 model, e.g. {"input_size": [224, 224], "resize": "bicubic"}. A TorchScript model
 needs it unless its input size is embedded in the .pt.
+
+--preprocessing is the preprocessing.py you will upload (ONNX / TorchScript). The
+platform then calls its preprocess() instead of its own resize and scaling; give
+--image so it runs on a real dataset file, as on the platform.
 
 Exit 0 when the platform can run the model; non-zero with the reason otherwise.
 Install the platform's pinned packages first so the result matches the TEE
@@ -104,6 +109,7 @@ def main():
     ap.add_argument("--weights", help="ONNX external weights (.onnx.data)")
     ap.add_argument("--input-spec", help="input_spec.json you will upload with the model (ONNX / TorchScript)")
     ap.add_argument("--image", help="optional sample input (JPEG/PNG/TIFF/BMP/WebP or DICOM)")
+    ap.add_argument("--preprocessing", help="preprocessing.py you will upload with the model (ONNX / TorchScript)")
     ap.add_argument("--batch-size", type=int, default=2)
     args = ap.parse_args()
 
@@ -113,18 +119,31 @@ def main():
         stage_model(args.format, Path(args.model), args.weights and Path(args.weights),
                     args.input_spec and Path(args.input_spec), mdir)
         try:
-            runtime = infer.RUNTIMES[args.format](mdir)
+            runtime = infer.RUNTIMES[args.format](mdir, preprocessed=bool(args.preprocessing))
             print(f"OK   loaded with {runtime.name} {runtime.version} on {runtime.device}")
             if runtime.spec:
                 print(f"OK   platform will feed: {asdict(runtime.spec)} (from {runtime.spec_source})")
             else:
                 print("OK   inputs prepared by the model's own preprocessor_config.json")
-            img = infer.decode(args.image) if args.image else np.zeros((512, 512, 3), dtype=np.uint8)
             n = runtime.spec.fixed_batch if runtime.spec and runtime.spec.fixed_batch else args.batch_size
-            if runtime.spec is None:
-                out = runtime.run([img] * n)
+            if args.preprocessing:
+                if not args.image:
+                    print("FAIL --preprocessing needs --image: preprocess() runs on a real dataset file")
+                    return 2
+                pre = infer.Preprocessor(args.preprocessing)
+                sample = pre.sample(Path(args.image), runtime.spec)
+                print(f"OK   preprocess() got the file as {pre.source!r} and returned {list(sample.shape)} "
+                      f"{sample.dtype}, values {float(sample.min()):.4g}..{float(sample.max()):.4g}")
+                out = runtime.run(np.stack([sample] * n))
             else:
-                out = runtime.run(np.stack([infer.to_tensor(img, runtime.spec)] * n))
+                img = infer.decode(args.image) if args.image else np.zeros((512, 512, 3), dtype=np.uint8)
+                if runtime.spec is None:
+                    out = runtime.run([img] * n)
+                else:
+                    out = runtime.run(np.stack([infer.to_tensor(img, runtime.spec)] * n))
+        except infer.PreprocessError as exc:
+            print(f"FAIL preprocessing: {exc}")
+            return 15
         except infer.ModelError as exc:
             print(f"FAIL {exc}")
             return 13

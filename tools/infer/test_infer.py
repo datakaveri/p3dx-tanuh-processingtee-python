@@ -403,5 +403,106 @@ class PerSample(unittest.TestCase):
         self.assertIn("batch size 1", proc.stdout)
 
 
+
+class Preprocessing(unittest.TestCase):
+    """--preprocessing: the model owner's preprocess() replaces the platform's
+    resize/scaling; bad scripts exit 15 (reported as a pre-processing error)."""
+
+    def run_infer(self, script, model_shape=("b", 3, 8, 8), images=(10, 20), elem=TensorProto.FLOAT):
+        d = Path(tempfile.mkdtemp())
+        (d / "model").mkdir()
+        tiny_onnx(d / "model" / "model.onnx", list(model_shape), elem=elem)
+        lines = []
+        for i, value in enumerate(images):
+            write_image(d / f"img{i}.jpg", value)
+            lines.append(f"img{i}.jpg\t{d / f'img{i}.jpg'}")
+        (d / "inputs.txt").write_text("\n".join(lines))
+        (d / "preprocessing.py").write_text(script)
+        proc = subprocess.run([sys.executable, str(INFER), "--format", "onnx", "--model-dir", str(d / "model"),
+                               "--inputs", str(d / "inputs.txt"), "--output-dir", str(d / "raw"),
+                               "--preprocessing", str(d / "preprocessing.py")],
+                              capture_output=True, text=True)
+        return proc, d
+
+    def outputs(self, d):
+        return np.load(d / "raw" / "raw_outputs.npz")["y"]
+
+    def test_array_source_by_default(self):
+        script = ("import numpy as np\n"
+                  "def preprocess(img):\n"
+                  "    assert img.dtype == np.uint8 and img.shape == (30, 40, 3), (img.dtype, img.shape)\n"
+                  "    return np.full((3, 8, 8), img.mean() / 100, np.float64)\n")
+        proc, d = self.run_infer(script)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        np.testing.assert_allclose(self.outputs(d), [0.1, 0.2], atol=0.02)  # platform scaling skipped
+        meta = json.loads((d / "raw" / "meta.json").read_text())
+        self.assertEqual(meta["preprocessing"], {"source": "array", "declared_source": "array"})
+
+    def test_path_auto_and_bytes_sources(self):
+        for declared, want_type in (("path", "str"), ("auto", "str"), ("bytes", "bytes")):
+            with self.subTest(declared):
+                script = (f"import numpy as np\nINPUT = dict(source={declared!r})\n"
+                          f"def preprocess(x):\n"
+                          f"    assert type(x).__name__ == {want_type!r}, type(x)\n"
+                          f"    return np.ones((3, 8, 8), np.float32)\n")
+                proc, d = self.run_infer(script)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                np.testing.assert_allclose(self.outputs(d), [1, 1])
+
+    def test_batch_axis_of_one_and_dynamic_size(self):
+        script = "import numpy as np\ndef preprocess(img):\n    return np.zeros((1, 3, 5, 7), np.float32)\n"
+        proc, d = self.run_infer(script, model_shape=("b", 3, "h", "w"))  # no input_spec needed
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(json.loads((d / "raw" / "meta.json").read_text())["input_spec"]["height"], 0)
+
+    def test_bad_scripts_exit_15(self):
+        cases = {
+            "wrong shape": "import numpy as np\ndef preprocess(img):\n    return np.zeros((3, 16, 16), np.float32)\n",
+            "wrong layout": "import numpy as np\ndef preprocess(img):\n    return np.zeros((8, 8, 3), np.float32)\n",
+            "raises": "def preprocess(img):\n    raise ValueError('boom')\n",
+            "no function": "x = 1\n",
+            "import error": "import a_module_that_does_not_exist\n",
+            "nan": "import numpy as np\ndef preprocess(img):\n    return np.full((3, 8, 8), np.nan, np.float32)\n",
+            "not numbers": "def preprocess(img):\n    return 'not an array'\n",
+            "bad source": "INPUT = dict(source='url')\ndef preprocess(x):\n    return x\n",
+            "varying shapes": ("import numpy as np\nn = [0]\n"
+                               "def preprocess(img):\n    n[0] += 1\n    return np.zeros((3, 4 + n[0], 4), np.float32)\n"),
+        }
+        for name, script in cases.items():
+            with self.subTest(name):
+                shape = ("b", 3, "h", "w") if name == "varying shapes" else ("b", 3, 8, 8)
+                proc, _ = self.run_infer(script, model_shape=shape)
+                self.assertEqual(proc.returncode, 15, proc.stdout + proc.stderr)
+                self.assertIn("PREPROCESSING ERROR", proc.stdout)
+
+    def test_uint8_model_needs_integer_output(self):
+        float_script = "import numpy as np\ndef preprocess(img):\n    return np.zeros((8, 8, 3), np.float32)\n"
+        proc, _ = self.run_infer(float_script, model_shape=("b", 8, 8, 3), elem=TensorProto.UINT8)
+        self.assertEqual(proc.returncode, 15, proc.stdout + proc.stderr)
+        int_script = "import numpy as np\ndef preprocess(img):\n    return np.full((8, 8, 3), 255, np.int64)\n"
+        proc, d = self.run_infer(int_script, model_shape=("b", 8, 8, 3), elem=TensorProto.UINT8)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        np.testing.assert_allclose(self.outputs(d), [255, 255])
+
+
+class GpuDetection(unittest.TestCase):
+    """onnxruntime-gpu lists CUDA on machines without a GPU; asking for it there
+    crashes the process, so the CPU provider must be used alone."""
+
+    def test_cpu_only_without_a_gpu(self):
+        import os
+        old = os.environ.get("TANUH_FORCE_CPU")
+        os.environ["TANUH_FORCE_CPU"] = "1"
+        try:
+            self.assertFalse(infer.gpu_present())
+            d = Path(tempfile.mkdtemp())
+            tiny_onnx(d / "model.onnx", ["b", 3, 8, 8])
+            self.assertEqual(infer.OnnxRuntime(d).providers, ["CPUExecutionProvider"])
+        finally:
+            if old is None:
+                os.environ.pop("TANUH_FORCE_CPU", None)
+            else:
+                os.environ["TANUH_FORCE_CPU"] = old
+
 if __name__ == "__main__":
     unittest.main()

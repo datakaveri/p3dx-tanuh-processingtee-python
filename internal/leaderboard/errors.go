@@ -37,7 +37,8 @@ var envKeywords = []string{
 // (tanuh-leaderboards-apis models.SubmissionError):
 //
 //	1 = data loading / pre- or post-processing: a dataset file that will not
-//	    decode, the adaptor, its dependencies, or its predictions
+//	    decode, the preprocessing script, the adaptor, their dependencies, or
+//	    the predictions
 //	2 = model loading: the model file, its declared format, or running it
 //	3 = container / runtime: CUDA, timeouts, the evaluator, metric mapping,
 //	    GCS/KMS/catalogue, anything else in the platform
@@ -71,8 +72,11 @@ func Classify(err error) ErrorInfo {
 		}
 	}
 	// A dependency install that failed for a non-network reason (unknown
-	// package, resolution conflict) is the adaptor's imports.
+	// package, resolution conflict) is the script's own imports.
 	if isDeps {
+		if depsErr.Script == "preprocessing.py" {
+			return ErrorInfo{1, "PreprocessingDepsError", SanitizeMsg(msg)}
+		}
 		return ErrorInfo{1, "AdaptorDepsError", SanitizeMsg(msg)}
 	}
 	if errors.Is(err, fs.ErrNotExist) {
@@ -96,6 +100,9 @@ func classifyStage(st *eval.StageError) ErrorInfo {
 			return ErrorInfo{2, "ModelError", "The model could not be loaded, or does not accept the platform's input."}
 		case st.ExitCode == 14:
 			return ErrorInfo{1, "DatasetDecodeError", "A dataset file could not be decoded."}
+		case st.ExitCode == 15:
+			return ErrorInfo{1, "PreprocessingError", "The preprocessing script failed, or returned an input " +
+				"that does not match the model's declared input."}
 		default:
 			return ErrorInfo{3, "InferenceError", fmt.Sprintf("Inference exited with code %d.", st.ExitCode)}
 		}

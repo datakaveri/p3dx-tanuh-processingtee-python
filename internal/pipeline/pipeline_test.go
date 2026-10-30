@@ -58,6 +58,48 @@ func TestMaterializeONNX(t *testing.T) {
 	}
 }
 
+func TestMaterializePreprocessing(t *testing.T) {
+	script := []byte("def preprocess(x):\n    return x\n")
+	m := testManager(t)
+	job, err := m.materialize(v2Payload("onnx", map[string]any{
+		"model":         artifact(onnxModel),
+		"adaptor":       artifact([]byte("print('adapt')")),
+		"preprocessing": artifact(script),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(job.preprocessingPath); err != nil || string(got) != string(script) {
+		t.Fatalf("preprocessing.py = %q, %v", got, err)
+	}
+	if filepath.Base(job.preprocessingPath) != "preprocessing.py" || len(job.preprocessingSHA256) != 64 {
+		t.Fatalf("job = %+v", job)
+	}
+
+	// Without one, nothing is written and infer.py keeps its own preparation.
+	job, err = testManager(t).materialize(v2Payload("onnx", map[string]any{
+		"model": artifact(onnxModel), "adaptor": artifact([]byte("a")),
+	}))
+	if err != nil || job.preprocessingPath != "" || job.preprocessingSHA256 != "" {
+		t.Fatalf("no preprocessing: job=%+v err=%v", job, err)
+	}
+
+	// A tampered script is refused; Hugging Face models take none.
+	tampered := artifact(script)
+	tampered["sha256"] = strings.Repeat("0", 64)
+	if _, err := testManager(t).materialize(v2Payload("onnx", map[string]any{
+		"model": artifact(onnxModel), "adaptor": artifact([]byte("a")), "preprocessing": tampered,
+	})); err == nil {
+		t.Fatal("tampered preprocessing.py accepted")
+	}
+	var fe *modelpkg.FormatError
+	if _, err := testManager(t).materialize(v2Payload("huggingface", map[string]any{
+		"model": artifact([]byte("zip")), "adaptor": artifact([]byte("a")), "preprocessing": artifact(script),
+	})); !errors.As(err, &fe) {
+		t.Fatalf("huggingface + preprocessing: err = %v, want a model-format error", err)
+	}
+}
+
 func TestMaterializeRejects(t *testing.T) {
 	good := func() map[string]any {
 		return map[string]any{"model": artifact(onnxModel), "adaptor": artifact([]byte("a"))}

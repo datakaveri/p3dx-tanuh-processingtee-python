@@ -33,12 +33,14 @@ the browser's SHA-256 commitment, re-verified by the buffer and again here.
 A model can be **ONNX** (`model.onnx` + optional `model.onnx.data`),
 **TorchScript** (`model.pt` carrying `extra/tanuh.json`) or **Hugging Face**
 (a zip of a `save_pretrained()` folder with safetensors weights). The platform
-prepares every input to the model's declared shape, so there is no
-preprocessing script; model-specific normalisation lives inside the model.
+prepares every input to the model's declared shape. An ONNX or TorchScript
+submission may also carry a `preprocessing.py` whose `preprocess(x)` replaces
+that preparation (see `docs/model-submission.md`); otherwise model-specific
+normalisation lives inside the model.
 `tools/check_model.py` runs the same checks locally.
 
 ```
-python3 /app/infer.py --format F --model-dir M --inputs inputs.txt --output-dir raw/
+python3 /app/infer.py --format F --model-dir M --inputs inputs.txt --output-dir raw/ [--preprocessing preprocessing.py]
 python3 adaptor.py    --raw-dir raw/ --spec dataset_spec.json --output-dir predictions/
 python3 evaluate.py   --predictions predictions/predictions.csv --ground-truth ground_truth.csv \
                       --spec dataset_spec.json --results results.json
@@ -49,6 +51,7 @@ python3 evaluate.py   --predictions predictions/predictions.csv --ground-truth g
 | 11 | infer | CUDA/GPU runtime failure | 3 `CudaError` |
 | 13 | infer | model failed to load/run, or unsupported input | 2 `ModelError` |
 | 14 | infer | a dataset file could not be decoded | 1 `DatasetDecodeError` |
+| 15 | infer | `preprocessing.py` failed to load, raised, or returned the wrong input | 1 `PreprocessingError` |
 | non-zero | adaptor | adaptor failed | 1 `AdaptorError` |
 | 12 | evaluator | predictions.csv breaks the bucket format | 1 `PredictionsInvalidError` |
 | other | evaluator | evaluator failed | 3 `EvaluatorError` |

@@ -54,16 +54,20 @@ func kindOf(bucket string) gtKind {
 
 // materialized holds everything RunJob needs after payload validation.
 type materialized struct {
-	jobID         string
-	datasetUUID   string
-	modelFormat   string
-	jobDir        string
-	runtimeDir    string
-	modelDir      string // laid out by modelpkg for infer.py --model-dir
-	adaptorPath   string
-	modelSHA256   string
-	weightsSHA256 string
-	adaptorSHA256 string
+	jobID       string
+	datasetUUID string
+	modelFormat string
+	jobDir      string
+	runtimeDir  string
+	modelDir    string // laid out by modelpkg for infer.py --model-dir
+	adaptorPath string
+	// preprocessingPath is set when a preprocessing.py was uploaded (ONNX /
+	// TorchScript); infer.py then calls it instead of its own resize/scaling.
+	preprocessingPath   string
+	modelSHA256         string
+	weightsSHA256       string
+	adaptorSHA256       string
+	preprocessingSHA256 string
 	// inputSpecSHA256 is set when an input_spec.json was uploaded.
 	inputSpecSHA256 string
 	keycloakToken   string
@@ -114,8 +118,9 @@ func (m *Manager) RunJob(ctx context.Context, payload map[string]any) {
 
 // runSteps is the happy path:
 //
-//	catalogue entry → evaluator → adaptor deps → dataset decrypt → ground truth
-//	→ infer → adaptor → evaluator → leaderboard metrics → submit → callback
+//	catalogue entry → evaluator → script deps → dataset decrypt → ground truth
+//	→ infer (+ preprocessing.py) → adaptor → evaluator → leaderboard metrics
+//	→ submit → callback
 func (m *Manager) runSteps(ctx context.Context, job *materialized) error {
 	started := time.Now()
 	m.setState(func(s *State) {
@@ -145,6 +150,8 @@ func (m *Manager) runSteps(ctx context.Context, job *materialized) error {
 		return err
 	}
 	required := spec.RequiredMetrics()
+	log.Printf("pipeline: secure job %s: catalogue item %s %q: bucket %s, classes %q, primary metric %q",
+		job.jobID, job.datasetUUID, spec.Name, spec.TaskType, spec.ClassNames, spec.PrimaryMetric)
 
 	// 2. The bucket's evaluator, fetched before any expensive step so a
 	//    missing one fails fast.
@@ -155,10 +162,18 @@ func (m *Manager) runSteps(ctx context.Context, job *materialized) error {
 	log.Printf("pipeline: secure job %s: bucket %s, evaluator %s (sha256 %s…)",
 		job.jobID, ev.Bucket, ev.Origin, ev.SHA256[:12])
 
-	// 3. Third-party imports the adaptor needs.
+	// 3. Third-party imports the model provider's scripts need.
 	if err := timed("deps", func() error {
-		return eval.InstallDeps(ctx, m.cfg.BaseDir, filepath.Join(m.cfg.BaseDir, "dep_scanner.py"),
-			job.adaptorPath, m.cfg.DepsTimeout)
+		for _, script := range []string{job.preprocessingPath, job.adaptorPath} {
+			if script == "" {
+				continue
+			}
+			if err := eval.InstallDeps(ctx, m.cfg.BaseDir, filepath.Join(m.cfg.BaseDir, "dep_scanner.py"),
+				script, m.cfg.DepsTimeout); err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -219,6 +234,9 @@ func (m *Manager) runSteps(ctx context.Context, job *materialized) error {
 	if kind == gtBox {
 		inferArgs = append(inferArgs, "--per-sample") // detectors return a different number of boxes per image
 	}
+	if job.preprocessingPath != "" {
+		inferArgs = append(inferArgs, "--preprocessing", job.preprocessingPath)
+	}
 	if err := timed(eval.StageInfer, func() error {
 		return eval.RunStage(ctx, eval.Stage{
 			Name:    eval.StageInfer,
@@ -276,6 +294,7 @@ func (m *Manager) runSteps(ctx context.Context, job *materialized) error {
 
 	results["job_id"] = job.jobID
 	results["dataset_id"] = job.datasetUUID
+	results["dataset_name"] = spec.Name
 	results["payload_version"] = payloadVersion
 	results["bucket"] = spec.TaskType
 	results["model_format"] = job.modelFormat
@@ -286,6 +305,7 @@ func (m *Manager) runSteps(ctx context.Context, job *materialized) error {
 	results["model_sha256"] = job.modelSHA256
 	results["weights_sha256"] = job.weightsSHA256
 	results["adaptor_sha256"] = job.adaptorSHA256
+	results["preprocessing_sha256"] = job.preprocessingSHA256
 	results["input_spec_sha256"] = job.inputSpecSHA256
 	results["evaluator"] = map[string]any{"origin": ev.Origin, "sha256": ev.SHA256}
 	results["ground_truth"] = map[string]any{ // counts only: no sample names leave the TEE log
@@ -342,7 +362,7 @@ func (m *Manager) runSteps(ctx context.Context, job *materialized) error {
 //
 //	{"payload_version": 2, "job_id", "dataset_id", "model_format",
 //	 "keycloak_token", "buffer_job_url",
-//	 "artifacts": {"model"|"weights"|"adaptor"|"input_spec": {"sha256", "base64"}}}
+//	 "artifacts": {"model"|"weights"|"adaptor"|"preprocessing"|"input_spec": {"sha256", "base64"}}}
 //
 // Every artifact must carry a SHA-256 (committed by the browser at submit and
 // re-checked by the Buffer) that matches its bytes. Confidentiality in transit
@@ -388,8 +408,16 @@ func (m *Manager) materialize(payload map[string]any) (*materialized, error) {
 	if err != nil {
 		return nil, err
 	}
+	preprocessing, preprocessingSHA, err := decodeArtifact(artifacts, "preprocessing", false)
+	if err != nil {
+		return nil, err
+	}
+	if preprocessing != nil && job.modelFormat == modelpkg.HuggingFace {
+		return nil, &modelpkg.FormatError{Msg: "a preprocessing script is not used with Hugging Face models; " +
+			"their preprocessor_config.json is the preprocessing"}
+	}
 	job.modelSHA256, job.weightsSHA256, job.adaptorSHA256 = modelSHA, weightsSHA, adaptorSHA
-	job.inputSpecSHA256 = inputSpecSHA
+	job.inputSpecSHA256, job.preprocessingSHA256 = inputSpecSHA, preprocessingSHA
 
 	job.jobDir = m.jobDir(job.jobID)
 	job.runtimeDir = filepath.Join(job.jobDir, "runtime")
@@ -407,14 +435,21 @@ func (m *Manager) materialize(payload map[string]any) (*materialized, error) {
 	if err := os.WriteFile(job.adaptorPath, adaptor, 0o644); err != nil {
 		return nil, err
 	}
+	if preprocessing != nil {
+		job.preprocessingPath = filepath.Join(scriptsDir, "preprocessing.py")
+		if err := os.WriteFile(job.preprocessingPath, preprocessing, 0o644); err != nil {
+			return nil, err
+		}
+	}
 
 	if raw, err := json.MarshalIndent(payload, "", "  "); err == nil {
 		if err := os.WriteFile(filepath.Join(job.jobDir, "incoming_payload.json"), raw, 0o644); err != nil {
 			log.Printf("pipeline: write incoming_payload.json: %v", err)
 		}
 	}
-	log.Printf("pipeline: secure job %s materialized (%s model %d bytes, weights %d bytes, adaptor %d bytes)",
-		job.jobID, job.modelFormat, len(model), len(weights), len(adaptor))
+	log.Printf("pipeline: secure job %s materialized (%s model %d bytes, weights %d bytes, adaptor %d bytes, "+
+		"preprocessing %d bytes, input spec %d bytes)",
+		job.jobID, job.modelFormat, len(model), len(weights), len(adaptor), len(preprocessing), len(inputSpec))
 	return job, nil
 }
 

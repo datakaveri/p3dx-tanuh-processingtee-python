@@ -1,0 +1,61 @@
+{
+  "status": "success",
+  "task_type": "binary_classification",
+  "num_samples": 127,
+  "class_names": [
+    "Non-Suspicious",
+    "Suspicious"
+  ],
+  "metrics": {
+    "tp": 51,
+    "tn": 58,
+    "fp": 14,
+    "fn": 4,
+    "accuracy": 0.8582677165354331,
+    "sensitivity": 0.9272727272727272,
+    "specificity": 0.8055555555555556,
+    "ppv": 0.7846153846153846,
+    "npv": 0.9354838709677419,
+    "fnr": 0.07272727272727272,
+    "fpr": 0.19444444444444445,
+    "f1": 0.85,
+    "f2": 0.8947368421052632,
+    "auc": 0.9343434343434344,
+    "confusion_matrix": [
+      [
+        58,
+        14
+      ],
+      [
+        4,
+        51
+      ]
+    ]
+  },
+  "confusion_matrix": [
+    [
+      58,
+      14
+    ],
+    [
+      4,
+      51
+    ]
+  ],
+  "label_distribution": {
+    "Non-Suspicious": 72,
+    "Suspicious": 55
+  },
+  "prediction_distribution": {
+    "Non-Suspicious": 62,
+    "Suspicious": 65
+  },
+  "predictions_format": {
+    "file_column": "file",
+    "label_column": "label",
+    "score_column": "score",
+    "score_transform": "none",
+    "label_from": "column",
+    "ignored_rows": 0
+  }
+}

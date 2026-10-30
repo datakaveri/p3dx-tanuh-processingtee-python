@@ -175,3 +175,62 @@ func TestParseItemAndValidate(t *testing.T) {
 		t.Fatal("single-class classification accepted")
 	}
 }
+
+// item_ocs_live.json / item_bcd_live.json are the production bodh.tanuh.ai
+// cat/item responses (2026-10-30): the fields a job reads must come through.
+func TestParseLiveItems(t *testing.T) {
+	cases := []struct {
+		file, id, name, bucket, primary string
+		classes                         []string
+		required                        []string
+	}{
+		{"ocs_live", "c7c117e8-7ed4-4dab-bcca-7d21bb2e2a7d", "Oral Cancer", "binary_classification", "f2_score",
+			[]string{"Non-Suspicious", "Suspicious"},
+			[]string{"f2_score", "npv_negative_predictive_value", "ppv_positive_predictive_value",
+				"sensitivity_recall", "specificity_true_negative_rate"}},
+		{"bcd_live", "12ff1e0d-b32a-40e1-9868-5fd1f89ed30f", "Breast Cancer", "multiclass_classification", "macro_f1",
+			[]string{"A", "B", "C", "D"},
+			[]string{"accuracy", "auc_area_under_curve", "macro_f1", "macro_f2", "npv_negative_predictive_value",
+				"ppv_positive_predictive_value", "qwk_quadratic_weight_kappa", "sensitivity_recall",
+				"specificity_true_negative_rate", "weighted_f2"}},
+	}
+	for _, tc := range cases {
+		s := load(t, tc.file)
+		if s.ID != tc.id || s.Name != tc.name || s.TaskType != tc.bucket || s.PrimaryMetric != tc.primary {
+			t.Errorf("%s: got id=%q name=%q bucket=%q primary=%q", tc.file, s.ID, s.Name, s.TaskType, s.PrimaryMetric)
+		}
+		if !reflect.DeepEqual(s.ClassNames, tc.classes) {
+			t.Errorf("%s: class_names = %q", tc.file, s.ClassNames)
+		}
+		if err := s.Validate(); err != nil {
+			t.Errorf("%s: %v", tc.file, err)
+		}
+		if got := keys(s.RequiredMetrics()); !reflect.DeepEqual(got, tc.required) {
+			t.Errorf("%s required\n got %v\nwant %v", tc.file, got, tc.required)
+		}
+	}
+	if qwk := load(t, "bcd_live").RequiredMetrics()["qwk_quadratic_weight_kappa"]; qwk.Min != -1 || qwk.Max != 1 {
+		t.Errorf("BCD qwk range = [%g,%g], want [-1,1]", qwk.Min, qwk.Max)
+	}
+}
+
+// A catalogue answer for a different item than the one asked for must fail
+// the job rather than score it against the wrong dataset.
+func TestFetchSpecRejectsAnotherItem(t *testing.T) {
+	raw, err := os.ReadFile("testdata/item_ocs_live.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(raw)
+	}))
+	defer srv.Close()
+	s, err := FetchSpec(context.Background(), srv.URL, "C7C117E8-7ED4-4DAB-BCCA-7D21BB2E2A7D", "")
+	if err != nil || s.Name != "Oral Cancer" {
+		t.Fatalf("matching id (any case): spec=%+v err=%v", s, err)
+	}
+	if _, err := FetchSpec(context.Background(), srv.URL, "12ff1e0d-b32a-40e1-9868-5fd1f89ed30f", ""); err == nil ||
+		!strings.Contains(err.Error(), "returned c7c117e8") {
+		t.Fatalf("mismatched id: err = %v", err)
+	}
+}

@@ -22,6 +22,8 @@ import (
 
 // Spec is what a job needs from the catalogue item.
 type Spec struct {
+	ID              string         // the item's own id (checked against the UUID asked for)
+	Name            string         // the dataset's display name, e.g. "Oral Cancer"
 	TaskType        string         // problem bucket slug, e.g. binary_classification
 	ClassNames      []string       // in label order (label i = ClassNames[i])
 	DatasetMetrics  map[string]any // raw datasetMetrics block (metrics + descriptive fields)
@@ -48,7 +50,16 @@ func FetchSpec(ctx context.Context, baseURL, uuid, token string) (Spec, error) {
 	if status != http.StatusOK {
 		return Spec{}, fmt.Errorf("catalogue: item %s status %d: %s", uuid, status, snippet(raw))
 	}
-	return ParseItem(raw)
+	s, err := ParseItem(raw)
+	if err != nil {
+		return Spec{}, err
+	}
+	// Score against the dataset that was asked for, never a neighbour the
+	// controlplane happened to return.
+	if s.ID != "" && !strings.EqualFold(s.ID, strings.TrimSpace(uuid)) {
+		return Spec{}, fmt.Errorf("catalogue: asked for item %s but the catalogue returned %s", uuid, s.ID)
+	}
+	return s, nil
 }
 
 func getItem(ctx context.Context, baseURL, uuid, token string) (int, []byte, error) {
@@ -88,7 +99,13 @@ func ParseItem(raw []byte) (Spec, error) {
 	if bucket == "" {
 		bucket = strings.TrimSpace(str(item["task_type"]))
 	}
+	name := strings.TrimSpace(str(item["name"]))
+	if name == "" {
+		name = strings.TrimSpace(str(item["label"]))
+	}
 	s := Spec{
+		ID:              strings.TrimSpace(str(item["id"])),
+		Name:            name,
 		TaskType:        bucket,
 		ClassNames:      classNames(item["class_names"]),
 		PrimaryMetric:   str(item["primaryMetric"]),

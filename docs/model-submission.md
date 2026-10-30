@@ -1,19 +1,20 @@
 # Submitting a model to TANUH
 
-You upload two things:
+You upload:
 
 1. **A model file** in one of three formats: ONNX, TorchScript or Hugging Face.
 2. **`adaptor.py`**, which turns your model's raw outputs into the dataset's `predictions.csv`.
+3. **Optionally, `preprocessing.py`** (ONNX and TorchScript only), which turns one dataset file into your model's input. See [preprocessing.py](#preprocessingpy).
 
 The platform runs your model exactly as you uploaded it. **It does not convert, retrain or fix your model.**
-Before scoring, it does only these steps to every image:
+Without a `preprocessing.py`, it does only these steps to every image before scoring:
 
 1. Decode the image to RGB. For DICOM, it takes the middle frame, inverts MONOCHROME1, min-max scales to 0–255 and copies the grey channel into 3 channels.
 2. Resize to your model's input size.
 3. Scale to 0–1 (float inputs) or keep 0–255 (uint8 inputs).
 4. Arrange the channels and layout your model declares.
 
-**Your model file must include every other preprocessing step your training used**, for example ImageNet mean/std, colour balancing or BGR order.
+**Your model file, or your `preprocessing.py`, must include every other preprocessing step your training used**, for example ImageNet mean/std, colour balancing or BGR order.
 If a step is missing, nothing fails: your model simply scores lower. Test locally with `tools/check_model.py` before you upload.
 
 ## Choosing a format
@@ -98,6 +99,25 @@ The platform does not use `id2label` in `config.json`. Your adaptor decides how 
 
 - **Your preprocessing:** put it inside the scripted module's `forward`.
 - **Loading:** the model is loaded with `torch` 2.5.1.
+
+## preprocessing.py
+
+Optional, for ONNX and TorchScript models. Start from the BODH `preprocessing_template.py`.
+When you upload it, the platform does **not** resize or scale your inputs: it calls your
+`preprocess(x)` once per dataset file and feeds the result to your model.
+
+- **What `x` is** depends on `INPUT["source"]` in your script:
+
+  | `INPUT["source"]` | `x` |
+  |---|---|
+  | `"array"`, or no `INPUT` | the file decoded to `uint8` `(H, W, 3)` RGB (DICOM: middle frame, MONOCHROME1 inverted, min-max to 0–255) |
+  | `"path"` or `"auto"` | the file's path, as a `str`, so you can read it yourself (e.g. DICOM headers) |
+  | `"bytes"` | the file's raw bytes |
+
+- **What it returns:** one input for your model **without** the batch axis, e.g. `float32` `[3, 256, 256]` for an NCHW model. It must match the model's declared channels, height and width (where they are fixed) and contain no NaN or infinity. It is cast to the model's input type; a `uint8` model needs integer values.
+- **Libraries:** numpy, OpenCV, Pillow, pydicom and torch are installed. Other imports are installed from PyPI before the job runs, except imports inside a `try` block that catches `ImportError`, which are treated as optional.
+- **Failures:** a script that fails to import, raises, or returns the wrong shape fails the job with error code 1 (`PreprocessingError`).
+- **Hugging Face models** cannot use it: `preprocessor_config.json` is their preprocessing.
 
 ## adaptor.py
 

@@ -44,6 +44,8 @@ func TestClassify(t *testing.T) {
 		{"wrong model format", fmt.Errorf("materialize: %w", &modelpkg.FormatError{Msg: "not an ONNX file"}), 2, "ModelFormatError"},
 		{"metric mapping", &MetricError{Kind: "MetricMappingError", Msg: "x"}, 3, "MetricMappingError"},
 		{"deps user error", &eval.DepsError{Output: "no such package: nonexistent-lib"}, 1, "AdaptorDepsError"},
+		{"preprocessing deps", &eval.DepsError{Script: "preprocessing.py", Output: "no such package: x"}, 1, "PreprocessingDepsError"},
+		{"preprocessing script error", &eval.StageError{Stage: eval.StageInfer, ExitCode: 15}, 1, "PreprocessingError"},
 		{"deps network error", &eval.DepsError{Output: "connection reset while downloading"}, 3, "EnvironmentError"},
 		{"env keyword", fmt.Errorf("KMS asymmetricDecrypt: connection refused"), 3, "EnvironmentError"},
 		{"generic", fmt.Errorf("something odd happened"), 3, "PipelineError"},
@@ -203,5 +205,24 @@ func TestForLeaderboardWithoutRequirementsSendsFlatMetrics(t *testing.T) {
 	}
 	if got["qwk"] == nil {
 		t.Fatal("metrics missing")
+	}
+}
+
+// results_binary_ocs_client_onnx.json is the binary evaluator's output for
+// the client's OCS model (ONNX + preprocessing.py + adaptor.py) on the 127
+// benchmark images; it must map onto every metric the live OCS item requires.
+func TestForLeaderboardClientOCSRun(t *testing.T) {
+	spec := catalogueSpec(t, "ocs_live")
+	got, err := ForLeaderboard(evalMetrics(t, "binary_ocs_client_onnx"), spec.RequiredMetrics())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"f2_score", "npv_negative_predictive_value", "ppv_positive_predictive_value",
+		"sensitivity_recall", "specificity_true_negative_rate"}
+	if !reflect.DeepEqual(mapKeys(got), want) {
+		t.Fatalf("keys\n got %v\nwant %v", mapKeys(got), want)
+	}
+	if f2, _ := got["f2_score"].(float64); f2 < 0.89 || f2 > 0.90 {
+		t.Fatalf("f2_score = %v, want ~0.895", got["f2_score"])
 	}
 }

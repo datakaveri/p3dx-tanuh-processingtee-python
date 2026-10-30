@@ -1,0 +1,477 @@
+{
+  "type": "dx:controlPlane:success",
+  "title": "Success",
+  "detail": "Success: Item fetched successfully",
+  "result": [
+    {
+      "modality": "RGB image",
+      "type": [
+        "adex:DataBank"
+      ],
+      "outputDataType": "Binary classification label",
+      "datasetMetrics": {
+        "modality": "RGB image",
+        "outputDataType": "Binary classification label",
+        "inputMaxFileSize": "5 MB per image",
+        "npv_negative_predictive_value": 0,
+        "output": {
+          "columns": [
+            "Unique_case_ID",
+            "Label"
+          ],
+          "dataType": "Binary classification label",
+          "format": "CSV",
+          "description": "One row per case. Label is 0 (Non-suspicious) or 1 (Suspicious), as an integer. Every case must have exactly one row; a hard label is required, so emit 0 when the model is unsure or detects no lesion.",
+          "maxFileSize": "5 MB"
+        },
+        "f2_score": 0,
+        "inputPreprocessing": "None applied.",
+        "inputSize": "~3-5 MB per file; 3072x3072 px (9.4 MPx); filename = image ID",
+        "outputFormat": "CSV",
+        "sensitivity_recall": 0,
+        "inputDataType": "Single RGB 2D intra-oral photograph",
+        "primaryMetric": "f2_score",
+        "problemStatement": "binary_classification",
+        "specificity_true_negative_rate": 0,
+        "inputFormat": "JPG",
+        "secondaryMetric": "sensitivity_recall",
+        "distributions": [
+          {
+            "total": 127,
+            "label": "Label distribution",
+            "categories": [
+              {
+                "name": "Non-suspicious",
+                "count": 72
+              },
+              {
+                "name": "Suspicious",
+                "count": 55
+              }
+            ]
+          },
+          {
+            "total": 127,
+            "label": "Sex distribution",
+            "categories": [
+              {
+                "name": "Male",
+                "count": 74
+              },
+              {
+                "name": "Female",
+                "count": 53
+              }
+            ]
+          },
+          {
+            "total": 127,
+            "label": "Study setting",
+            "categories": [
+              {
+                "name": "Field / primary care",
+                "count": 78
+              },
+              {
+                "name": "Hospital",
+                "count": 49
+              }
+            ]
+          },
+          {
+            "note": "Categories are not mutually exclusive - participants may report multiple habits.",
+            "label": "Risk habits",
+            "categories": [
+              {
+                "name": "Cigarette / Bidi",
+                "count": 32
+              },
+              {
+                "name": "Smokeless tobacco",
+                "count": 44
+              },
+              {
+                "name": "Areca nut",
+                "count": 33
+              },
+              {
+                "name": "Alcohol",
+                "count": 20
+              }
+            ]
+          },
+          {
+            "total": 127,
+            "label": "Habit status",
+            "categories": [
+              {
+                "name": "Any habit reported",
+                "count": 98
+              },
+              {
+                "name": "No habit",
+                "count": 29
+              }
+            ]
+          },
+          {
+            "total": 55,
+            "label": "Risk level (among suspicious cases)",
+            "categories": [
+              {
+                "name": "High risk",
+                "count": 16
+              },
+              {
+                "name": "Low risk",
+                "count": 39
+              }
+            ]
+          },
+          {
+            "total": 127,
+            "label": "Oral cavity site",
+            "categories": [
+              {
+                "name": "Left buccal mucosa",
+                "count": 31
+              },
+              {
+                "name": "Right buccal mucosa",
+                "count": 28
+              },
+              {
+                "name": "Dorsum of tongue",
+                "count": 14
+              },
+              {
+                "name": "Palate",
+                "count": 11
+              },
+              {
+                "name": "Right margin of tongue",
+                "count": 9
+              },
+              {
+                "name": "Floor of mouth",
+                "count": 8
+              },
+              {
+                "name": "Left margin of tongue",
+                "count": 8
+              },
+              {
+                "name": "Mandibular vestibule",
+                "count": 8
+              },
+              {
+                "name": "Retromolar trigone",
+                "count": 3
+              },
+              {
+                "name": "Maxillary vestibule",
+                "count": 2
+              },
+              {
+                "name": "Right alveolar ridge",
+                "count": 2
+              },
+              {
+                "name": "Gingiva",
+                "count": 1
+              },
+              {
+                "name": "Labial mucosa (lower lip)",
+                "count": 1
+              },
+              {
+                "name": "Labial mucosa (upper lip)",
+                "count": 1
+              }
+            ]
+          }
+        ],
+        "volume": "127 participants · 127 images",
+        "input": {
+          "size": "~3-5 MB per file; 3072x3072 px (9.4 MPx); filename = image ID",
+          "preprocessing": "None applied.",
+          "dataType": "Single RGB 2D intra-oral photograph",
+          "organization": "Two folders by binary class: OCS_Benchmarking/Non-Suspicious and OCS_Benchmarking/Suspicious",
+          "format": "JPG",
+          "maxFileSize": "5 MB per image"
+        },
+        "inputOrganization": "Two folders by binary class: OCS_Benchmarking/Non-Suspicious and OCS_Benchmarking/Suspicious",
+        "outputColumns": "Unique_case_ID, Label",
+        "outputMaxFileSize": "5 MB",
+        "outputDescription": "One row per case. Label is 0 (Non-suspicious) or 1 (Suspicious), as an integer. Every case must have exactly one row; a hard label is required, so emit 0 when the model is unsure or detects no lesion.",
+        "ppv_positive_predictive_value": 0
+      },
+      "organizationId": "6c8e70a4-cca4-43db-92be-45f4d1ccc0bd",
+      "output": "Suspicious / Non-suspicious (binary)",
+      "inputPreprocessing": "None applied.",
+      "lastUpdated": "2026-10-01T17:15:08+0530",
+      "id": "c7c117e8-7ed4-4dab-bcca-7d21bb2e2a7d",
+      "outputFormat": "CSV",
+      "publishStatus": "ACTIVE",
+      "yearRange": "2026-2026",
+      "shortDescription": "Gold-standard reference dataset for oral cancer screening. 127 intra-oral photographs, one per participant, labelled Suspicious or Non-suspicious after specialist consensus.",
+      "verifiedBy": "May Org Admin",
+      "inputFormat": "JPG",
+      "dataBankType": "Structured",
+      "secondaryMetric": "sensitivity_recall",
+      "distributions": [
+        {
+          "total": 127,
+          "label": "Label distribution",
+          "categories": [
+            {
+              "name": "Non-suspicious",
+              "count": 72
+            },
+            {
+              "name": "Suspicious",
+              "count": 55
+            }
+          ]
+        },
+        {
+          "total": 127,
+          "label": "Sex distribution",
+          "categories": [
+            {
+              "name": "Male",
+              "count": 74
+            },
+            {
+              "name": "Female",
+              "count": 53
+            }
+          ]
+        },
+        {
+          "total": 127,
+          "label": "Study setting",
+          "categories": [
+            {
+              "name": "Field / primary care",
+              "count": 78
+            },
+            {
+              "name": "Hospital",
+              "count": 49
+            }
+          ]
+        },
+        {
+          "note": "Categories are not mutually exclusive - participants may report multiple habits.",
+          "label": "Risk habits",
+          "categories": [
+            {
+              "name": "Cigarette / Bidi",
+              "count": 32
+            },
+            {
+              "name": "Smokeless tobacco",
+              "count": 44
+            },
+            {
+              "name": "Areca nut",
+              "count": 33
+            },
+            {
+              "name": "Alcohol",
+              "count": 20
+            }
+          ]
+        },
+        {
+          "total": 127,
+          "label": "Habit status",
+          "categories": [
+            {
+              "name": "Any habit reported",
+              "count": 98
+            },
+            {
+              "name": "No habit",
+              "count": 29
+            }
+          ]
+        },
+        {
+          "total": 55,
+          "label": "Risk level (among suspicious cases)",
+          "categories": [
+            {
+              "name": "High risk",
+              "count": 16
+            },
+            {
+              "name": "Low risk",
+              "count": 39
+            }
+          ]
+        },
+        {
+          "total": 127,
+          "label": "Oral cavity site",
+          "categories": [
+            {
+              "name": "Left buccal mucosa",
+              "count": 31
+            },
+            {
+              "name": "Right buccal mucosa",
+              "count": 28
+            },
+            {
+              "name": "Dorsum of tongue",
+              "count": 14
+            },
+            {
+              "name": "Palate",
+              "count": 11
+            },
+            {
+              "name": "Right margin of tongue",
+              "count": 9
+            },
+            {
+              "name": "Floor of mouth",
+              "count": 8
+            },
+            {
+              "name": "Left margin of tongue",
+              "count": 8
+            },
+            {
+              "name": "Mandibular vestibule",
+              "count": 8
+            },
+            {
+              "name": "Retromolar trigone",
+              "count": 3
+            },
+            {
+              "name": "Maxillary vestibule",
+              "count": 2
+            },
+            {
+              "name": "Right alveolar ridge",
+              "count": 2
+            },
+            {
+              "name": "Gingiva",
+              "count": 1
+            },
+            {
+              "name": "Labial mucosa (lower lip)",
+              "count": 1
+            },
+            {
+              "name": "Labial mucosa (upper lip)",
+              "count": 1
+            }
+          ]
+        }
+      ],
+      "tags": [
+        "oral cancer",
+        "screening",
+        "intra-oral photograph",
+        "binary classification",
+        "medical imaging",
+        "benchmark"
+      ],
+      "itemCreatedAt": "2026-09-29T19:21:53+0530",
+      "volume": "127 participants · 127 images",
+      "license": "Open Government License, India",
+      "concepts": [
+        "",
+        "Administration"
+      ],
+      "fileSize": "455.32MB",
+      "resourceServer": [
+        {
+          "queryTypes": [
+            "ATTR"
+          ],
+          "name": "FILE",
+          "id": "fb54d575-a8e2-47d1-ab34-1a89cb907ff1",
+          "accessTypes": [
+            "ATTR"
+          ],
+          "type": "file",
+          "url": "bodh.tanuh.ai/"
+        }
+      ],
+      "name": "Oral Cancer",
+      "inputOrganization": "Two folders by binary class: OCS_Benchmarking/Non-Suspicious and OCS_Benchmarking/Suspicious",
+      "accessPolicy": "OPEN",
+      "outputMaxFileSize": "5 MB",
+      "metrics": {
+        "downloads": 0,
+        "dislikes": 0,
+        "views": 942.0,
+        "likes": 0
+      },
+      "description": "Gold-standard reference dataset for oral cancer screening (OCS_BenchmarkDataset_05_26). 127 participants each contribute one intra-oral RGB photograph, labelled Suspicious (55) or Non-suspicious (72) after specialist consensus. Participants were recruited in field/primary-care (78) and hospital (49) settings; mean age is 56.0 +/- 12.6 years. Images are unprocessed 3072x3072 px JPGs. EVALUATION-ONLY DATASET: held out from any training pool - do not use for training.",
+      "datasetOutput": {
+        "columns": [
+          "Unique_case_ID",
+          "Label"
+        ],
+        "dataType": "Binary classification label",
+        "format": "CSV",
+        "description": "One row per case. Label is 0 (Non-suspicious) or 1 (Suspicious), as an integer. Every case must have exactly one row; a hard label is required, so emit 0 when the model is unsure or detects no lesion.",
+        "maxFileSize": "5 MB"
+      },
+      "industry": "Health",
+      "inputMaxFileSize": "5 MB per image",
+      "geoCoverage": "na",
+      "inputSize": "~3-5 MB per file; 3072x3072 px (9.4 MPx); filename = image ID",
+      "itemStatus": "ACTIVE",
+      "croissant": "{\"@context\": {\"@language\": \"en\", \"@vocab\": \"https://schema.org/\", \"cr\": \"http://mlcommons.org/croissant/\", \"dct\": \"http://purl.org/dc/terms/\", \"sc\": \"https://schema.org/\", \"citeAs\": \"cr:citeAs\", \"column\": \"cr:column\", \"conformsTo\": \"dct:conformsTo\", \"data\": {\"@id\": \"cr:data\", \"@type\": \"@json\"}, \"dataType\": {\"@id\": \"cr:dataType\", \"@type\": \"@vocab\"}, \"examples\": {\"@id\": \"cr:examples\", \"@type\": \"@json\"}, \"extract\": \"cr:extract\", \"field\": \"cr:field\", \"fileObject\": \"cr:fileObject\", \"fileProperty\": \"cr:fileProperty\", \"fileSet\": \"cr:fileSet\", \"format\": \"cr:format\", \"includes\": \"cr:includes\", \"isLiveDataset\": \"cr:isLiveDataset\", \"jsonPath\": \"cr:jsonPath\", \"key\": \"cr:key\", \"md5\": \"cr:md5\", \"parentField\": \"cr:parentField\", \"path\": \"cr:path\", \"rai\": \"http://mlcommons.org/croissant/RAI/\", \"recordSet\": \"cr:recordSet\", \"references\": \"cr:references\", \"regex\": \"cr:regex\", \"repeated\": \"cr:repeated\", \"replace\": \"cr:replace\", \"samplingRate\": \"cr:samplingRate\", \"separator\": \"cr:separator\", \"source\": \"cr:source\", \"subField\": \"cr:subField\", \"equivalentProperty\": \"cr:equivalentProperty\", \"transform\": \"cr:transform\", \"tanuh\": \"https://bodh.tanuh.ai/schema/1.0#\", \"platform\": \"tanuh:platform\"}, \"@type\": \"sc:Dataset\", \"conformsTo\": \"http://mlcommons.org/croissant/1.0\", \"name\": \"Oral Cancer\", \"description\": \"Gold-standard reference dataset for oral cancer screening (OCS_BenchmarkDataset_05_26). 127 participants each contribute one intra-oral RGB photograph, labelled Suspicious (55) or Non-suspicious (72) after specialist consensus. Participants were recruited in field/primary-care (78) and hospital (49) settings; mean age is 56.0 +/- 12.6 years. Images are unprocessed 3072x3072 px JPGs. EVALUATION-ONLY DATASET: held out from any training pool - do not use for training.\", \"keywords\": [\"oral cancer\", \"screening\", \"intra-oral photograph\", \"binary classification\", \"medical imaging\", \"benchmark\"], \"inLanguage\": \"en\", \"license\": \"https://example.org/tanuh-internal-license\", \"version\": \"1.0.0\", \"datePublished\": \"2026-06-01\", \"creator\": {\"@type\": \"sc:Organization\", \"name\": \"TANUH\"}, \"citeAs\": \"TANUH. (2026). OCS Benchmark Dataset 05/26 [Data set].\", \"distribution\": [{\"@type\": \"cr:FileSet\", \"@id\": \"images\", \"name\": \"images\", \"description\": \"127 intra-oral RGB photographs, one per participant, in two class folders (Non-Suspicious, Suspicious).\", \"encodingFormat\": \"image/jpeg\", \"includes\": \"OCS_Benchmarking/*/*.jpg\"}, {\"@type\": \"cr:FileObject\", \"@id\": \"labels-csv\", \"name\": \"ocs_benchmark_labels.csv\", \"description\": \"Ground-truth labels, one row per case.\", \"contentUrl\": \"ocs_benchmark_labels.csv\", \"encodingFormat\": \"text/csv\", \"sha256\": \"TBD\"}], \"recordSet\": [{\"@type\": \"cr:RecordSet\", \"@id\": \"test_points\", \"name\": \"test_points\", \"description\": \"One record per test case. Per-case rows are not embedded in this file; populate `data` from the shipped labels file before release.\", \"field\": [{\"@type\": \"cr:Field\", \"@id\": \"test_points/case\", \"name\": \"case\", \"dataType\": \"sc:Text\", \"source\": {\"fileObject\": {\"@id\": \"labels-csv\"}, \"extract\": {\"column\": \"Unique_case_ID\"}}}, {\"@type\": \"cr:Field\", \"@id\": \"test_points/label\", \"name\": \"label\", \"dataType\": \"sc:Text\", \"source\": {\"fileObject\": {\"@id\": \"labels-csv\"}, \"extract\": {\"column\": \"Label\"}}}]}, {\"@type\": \"cr:RecordSet\", \"@id\": \"classes\", \"name\": \"classes\", \"description\": \"Class list, in label order (label i = row i).\", \"key\": {\"@id\": \"classes/index\"}, \"field\": [{\"@type\": \"cr:Field\", \"@id\": \"classes/index\", \"name\": \"index\", \"dataType\": \"sc:Integer\"}, {\"@type\": \"cr:Field\", \"@id\": \"classes/name\", \"name\": \"name\", \"dataType\": \"sc:Text\"}], \"data\": [{\"classes/index\": 0, \"classes/name\": \"Non-Suspicious\"}, {\"classes/index\": 1, \"classes/name\": \"Suspicious\"}]}]}",
+      "datasetInput": {
+        "size": "~3-5 MB per file; 3072x3072 px (9.4 MPx); filename = image ID",
+        "preprocessing": "None applied.",
+        "dataType": "Single RGB 2D intra-oral photograph",
+        "organization": "Two folders by binary class: OCS_Benchmarking/Non-Suspicious and OCS_Benchmarking/Suspicious",
+        "format": "JPG",
+        "maxFileSize": "5 MB per image"
+      },
+      "uploadedBy": "dekovo2227@bittnex.com",
+      "inputDataType": "Single RGB 2D intra-oral photograph",
+      "uploadFrequency": "OneTime",
+      "primaryMetric": "f2_score",
+      "problemStatement": "binary_classification",
+      "@context": "https://voc.v2.test.iudx.io/",
+      "organizationType": "Public",
+      "dataUploadStatus": true,
+      "organization": "TANUH",
+      "ownerUserId": "33090870-12af-4aa4-b500-26c0954549e8",
+      "outputColumns": "Unique_case_ID, Label",
+      "dataSample": {
+        "info": {
+          "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+          "name": "New Collection",
+          "_postman_id": "52ddcd25-f6d8-423d-922e-42bbc3dae156"
+        }
+      },
+      "outputDescription": "One row per case. Label is 0 (Non-suspicious) or 1 (Suspicious), as an integer. Every case must have exactly one row; a hard label is required, so emit 0 when the model is unsure or detects no lesion.",
+      "fileFormat": "jpg",
+      "class_names": [
+        "Non-Suspicious",
+        "Suspicious"
+      ]
+    }
+  ],
+  "paginationInfo": {
+    "page": 1,
+    "size": 1,
+    "totalCount": 1,
+    "totalPages": 1,
+    "hasNext": false,
+    "hasPrevious": false
+  }
+}
