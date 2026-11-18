@@ -24,7 +24,6 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 import requests
 from lib.config import config
-from lib.torchscript_spec import TorchScriptModelError, check_torchscript
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from Fetch_data.secrets import fetch_secret, get_oidc_token
@@ -70,15 +69,6 @@ CVM_SECURE_JOBS_DIR = CVM_WORKFLOW_DIR / "secure_jobs"
 CVM_SECURE_STATE_PATH = CVM_RUNTIME_DIR / "secure_runtime_state.json"
 MODEL_FILE_NAME = "model.onnx"
 WEIGHTS_FILE_NAME = "model.onnx.data"
-TORCHSCRIPT_MODEL_FILE_NAME = "model.pt"
-# Model formats (same names as the new Processing TEE); payloads without
-# model_format are ONNX.
-FORMAT_ONNX = "onnx"
-FORMAT_TORCHSCRIPT = "torchscript"
-MODEL_FILE_BY_FORMAT = {FORMAT_ONNX: MODEL_FILE_NAME, FORMAT_TORCHSCRIPT: TORCHSCRIPT_MODEL_FILE_NAME}
-# onnxruntime-compatible shim that runs TorchScript natively (see
-# torchscript_ort/onnxruntime/__init__.py); only on PYTHONPATH for TorchScript jobs.
-TORCHSCRIPT_ORT_SHIM_DIR = Path(__file__).resolve().parent / "torchscript_ort"
 PROCESSING_IDLE_TIMEOUT_SECONDS = int(os.getenv("PROCESSING_IDLE_TIMEOUT_SECONDS", "300"))
 PROCESSING_VM_STOP_SCRIPT = os.getenv(
     "PROCESSING_VM_STOP_SCRIPT",
@@ -406,8 +396,7 @@ def fetch_evaluation_script(dataset_id: int) -> Path:
 
 
 def run_evaluation_script_from_paths(model_path, dataset_path, results_path, eval_script_path,
-                                     preprocessing_path=None, model_format=FORMAT_ONNX,
-                                     torchscript_spec=None):
+                                     preprocessing_path=None):
     model_path       = Path(model_path)
     dataset_path     = Path(dataset_path)
     results_path     = Path(results_path)
@@ -416,13 +405,14 @@ def run_evaluation_script_from_paths(model_path, dataset_path, results_path, eva
 
     if not model_path.exists():
         raise FileNotFoundError(f"Model file not found: {model_path}")
+    if not weights_path.exists():
+        raise FileNotFoundError(f"External ONNX weights file not found: {weights_path}")
     if not eval_script_path.exists():
         raise FileNotFoundError(f"Evaluation script not found: {eval_script_path}")
 
     cvm_debug(f"Running evaluation script: {eval_script_path}")
-    cvm_debug(f"Model path: {model_path} (format={model_format})")
-    if weights_path.exists():
-        cvm_debug(f"Weights path: {weights_path}")
+    cvm_debug(f"Model path: {model_path}")
+    cvm_debug(f"Weights path: {weights_path}")
     cvm_debug(f"Dataset path: {dataset_path}")
     if preprocessing_path:
         cvm_debug(f"Preprocessing script: {preprocessing_path}")
@@ -430,12 +420,6 @@ def run_evaluation_script_from_paths(model_path, dataset_path, results_path, eva
     env = os.environ.copy()
     vendor_path = str(Path(config.base_dir) / ".vendor")
     env["PYTHONPATH"] = vendor_path + os.pathsep + env.get("PYTHONPATH", "")
-    if model_format == FORMAT_TORCHSCRIPT:
-        # The GCS eval scripts call onnxruntime.InferenceSession(model); put the
-        # TorchScript shim first so that runs model.pt natively in PyTorch.
-        env["PYTHONPATH"] = str(TORCHSCRIPT_ORT_SHIM_DIR) + os.pathsep + env["PYTHONPATH"]
-        env["TANUH_TORCHSCRIPT_SPEC"] = json.dumps(torchscript_spec or {})
-        cvm_debug(f"TorchScript model: running natively via the onnxruntime shim (input {torchscript_spec})")
 
     cmd = [
         sys.executable,
@@ -639,10 +623,6 @@ def _classify_leaderboard_error(exc: Exception) -> tuple:
     msg  = str(exc)
     name = type(exc).__name__
 
-    # The submitted TorchScript model is unusable: the user's model.
-    if isinstance(exc, TorchScriptModelError):
-        return 1, "ModelFormatError", _sanitize_error_msg(msg)
-
     # Map eval subprocess exit codes to error categories.
     m = _re.search(r"Evaluation script failed with exit code (\d+)", msg)
     if m:
@@ -840,18 +820,13 @@ def _materialize_secure_job_payload(payload):
         "job_id",
         "dataset_id",
         "model_onnx_base64",
+        "model_weights_base64",
         "model_sha256",
+        "weights_sha256",
     }
     missing = required_fields - set(payload.keys())
     if missing:
         raise ValueError(f"Missing fields in secure job payload: {sorted(missing)}")
-    # External ONNX weights (model.onnx.data) are optional, and ONNX-only.
-    has_weights = "model_weights_base64" in payload
-    model_format = (payload.get("model_format") or FORMAT_ONNX).strip().lower()
-    if model_format not in MODEL_FILE_BY_FORMAT:
-        raise ValueError(f"unsupported model_format {model_format!r} (expected onnx or torchscript)")
-    if has_weights and model_format != FORMAT_ONNX:
-        raise TorchScriptModelError("a weights file is only used with ONNX models")
 
     job_id = payload["job_id"]
     job_dir = _job_dir(job_id)
@@ -860,9 +835,8 @@ def _materialize_secure_job_payload(payload):
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     runtime_dir.mkdir(parents=True, exist_ok=True)
 
-    # File names come from the format, not the payload.
-    model_path = artifacts_dir / MODEL_FILE_BY_FORMAT[model_format]
-    weights_path = artifacts_dir / WEIGHTS_FILE_NAME
+    model_path = artifacts_dir / payload.get("model_file", MODEL_FILE_NAME)
+    weights_path = artifacts_dir / payload.get("weights_file", WEIGHTS_FILE_NAME)
 
     # Try to retrieve the per-job AES-256 key deposited by the Buffer TEE via RA-TLS.
     # If no key is present (e.g. during local testing), treat the base64 fields as plaintext.
@@ -871,28 +845,20 @@ def _materialize_secure_job_payload(payload):
         cvm_debug(f"AES-256 key found for job_id={job_id}; decrypting model bytes")
         aad = job_id.encode("utf-8")
         model_bytes = _decrypt_aes_gcm(aes_key, payload["model_onnx_base64"], aad)
-        weights_bytes = _decrypt_aes_gcm(aes_key, payload["model_weights_base64"], aad) if has_weights else None
+        weights_bytes = _decrypt_aes_gcm(aes_key, payload["model_weights_base64"], aad)
         _delete_model_key(job_id)
     else:
         cvm_debug(f"No AES key in store for job_id={job_id}; treating model fields as plaintext base64")
         model_bytes = base64.b64decode(payload["model_onnx_base64"])
-        weights_bytes = base64.b64decode(payload["model_weights_base64"]) if has_weights else None
+        weights_bytes = base64.b64decode(payload["model_weights_base64"])
 
     if hashlib.sha256(model_bytes).hexdigest() != payload["model_sha256"]:
-        raise ValueError(f"{model_path.name} SHA256 mismatch in secure payload")
-    if weights_bytes is not None and hashlib.sha256(weights_bytes).hexdigest() != payload.get("weights_sha256"):
+        raise ValueError("model.onnx SHA256 mismatch in secure payload")
+    if hashlib.sha256(weights_bytes).hexdigest() != payload["weights_sha256"]:
         raise ValueError("model weights SHA256 mismatch in secure payload")
 
     model_path.write_bytes(model_bytes)
-    if weights_bytes is not None:
-        weights_path.write_bytes(weights_bytes)
-
-    # TorchScript: check it is a torch.jit.save archive that declares its input
-    # size (embedded tanuh.json) before anything loads it.
-    torchscript_spec = None
-    if model_format == FORMAT_TORCHSCRIPT:
-        torchscript_spec = check_torchscript(model_path)
-        cvm_debug(f"TorchScript model accepted; input spec from {torchscript_spec['source']}: {torchscript_spec}")
+    weights_path.write_bytes(weights_bytes)
 
     # Extract user preprocessing script if provided (Oral Cancer jobs)
     preprocessing_path = None
@@ -913,9 +879,7 @@ def _materialize_secure_job_payload(payload):
         "job_dir": job_dir,
         "runtime_dir": runtime_dir,
         "model_path": model_path,
-        "model_format": model_format,
-        "torchscript_spec": torchscript_spec,
-        "weights_path": weights_path if weights_bytes is not None else None,
+        "weights_path": weights_path,
         "preprocessing_path": preprocessing_path,
         "dataset_id": int(payload["dataset_id"]),
         "hyperparameters": payload.get("hyperparameters", {}),
@@ -955,23 +919,17 @@ def run_secure_job_pipeline(payload):
 
     # Step 4: run evaluation
     results_path = runtime_dir / "results.json"
-    cvm_debug(f"Secure job {job_id}: evaluating {job_materialized['model_format']} model "
-              f"with runtime results at {results_path}")
+    cvm_debug(f"Secure job {job_id}: evaluating ONNX model with runtime results at {results_path}")
     _, results = run_evaluation_script_from_paths(
         model_path=job_materialized["model_path"],
         dataset_path=job_dataset_path,
         results_path=results_path,
         eval_script_path=eval_script_path,
         preprocessing_path=job_materialized.get("preprocessing_path"),
-        model_format=job_materialized["model_format"],
-        torchscript_spec=job_materialized["torchscript_spec"],
     )
     results["job_id"] = job_id
-    results["model_format"] = job_materialized["model_format"]
     results["model_sha256"] = _sha256_file(job_materialized["model_path"])
-    results["weights_sha256"] = (
-        _sha256_file(job_materialized["weights_path"]) if job_materialized["weights_path"] else ""
-    )
+    results["weights_sha256"] = _sha256_file(job_materialized["weights_path"])
     results["dataset_id"] = dataset_id
     _json_dump(results_path, results)
     cvm_debug(f"Secure job {job_id}: local results saved to {results_path}")
