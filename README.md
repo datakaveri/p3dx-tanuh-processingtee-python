@@ -38,13 +38,28 @@ Flask enclave manager  :4000  (enclave_manager_new.py)
 ## Job Pipeline
 
 1. Buffer TEE dispatches encrypted payload over RA-TLS → enclave manager accepts it on a background thread
-2. Job artifacts (model, weights, optional preprocessing script) materialized under `/app/cvm_workflow/secure_jobs/:job_id/artifacts/`
+2. Job artifacts (model, optional external weights `model.onnx.data`, optional preprocessing script) materialized under `/app/cvm_workflow/secure_jobs/:job_id/artifacts/`; the dispatch payload is capped at 2 GiB
 3. Dataset fetched and decrypted from GCS → written to `runtime/dataset_<id>_decrypted.json`
 4. Eval script fetched from GCS (`evaluation_script_<dataset_id>.py`) — **never modified by this repo**
-5. ONNX model loaded; inference runs against all dataset samples
+5. Model loaded; inference runs against all dataset samples (ONNX via ONNX Runtime, TorchScript natively via PyTorch — see below)
 6. Results JSON written to `runtime/results.json`
 7. Results uploaded to GCS and POSTed to the leaderboard with the user's Keycloak JWT as the Bearer token
 8. `stop-processing-vm.sh` called → VM deallocates itself
+
+## Model Formats
+
+The payload's `model_format` is `onnx` (default when absent) or `torchscript`.
+
+- **ONNX:** saved as `model.onnx` (+ optional `model.onnx.data`) and run by the GCS eval script with ONNX Runtime.
+- **TorchScript (PyTorch):** saved as `model.pt`. It must be saved with `torch.jit.save` (not `torch.save`) and must embed its input size:
+
+  ```python
+  torch.jit.save(scripted, "model.pt", _extra_files={"tanuh.json": json.dumps({"input_shape": [3, 224, 224]})})
+  ```
+
+  `lib/torchscript_spec.py` checks this before anything loads the file; a bad model is reported to the leaderboard as a user error (`ModelFormatError`). The model must load with the image's **torch 2.2.2**, and has no weights file.
+
+  The GCS eval scripts are unchanged: for TorchScript jobs only, `torchscript_ort/` is put first on the eval script's `PYTHONPATH`. Its `onnxruntime` module implements `InferenceSession` (`get_inputs`, `get_outputs`, `run`, `get_providers`, …) on top of `torch.jit.load`, so the script's ONNX Runtime calls run the model natively in PyTorch. The input is named `input`; outputs are `output` (or `output_0..n` / dict keys for multiple outputs). An eval script that uses any other ONNX Runtime API fails with an error naming it.
 
 ## Components
 
