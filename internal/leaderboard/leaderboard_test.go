@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"sort"
@@ -224,5 +225,60 @@ func TestForLeaderboardClientOCSRun(t *testing.T) {
 	}
 	if f2, _ := got["f2_score"].(float64); f2 < 0.89 || f2 > 0.90 {
 		t.Fatalf("f2_score = %v, want ~0.895", got["f2_score"])
+	}
+}
+
+// results_detection_kidney_rhv_onnx.json is the platform detection evaluator's
+// output for the RHV YOLOv11-S kidney model (Nikhileswara's submission, with its
+// preprocessing.py and the letterbox-aware adaptor) on the 200-image benchmark.
+// Every metric the live Ultrasound Kidney entry requires maps, except
+// efficiency_fps_gmacs: a speed/compute figure no evaluator can produce from
+// predictions, so the catalogue entry must not require it.
+func TestForLeaderboardKidneyDetectionRun(t *testing.T) {
+	required := catalogueSpec(t, "kidney_live").RequiredMetrics()
+	metrics := evalMetrics(t, "detection_kidney_rhv_onnx")
+
+	_, err := ForLeaderboard(metrics, required)
+	var me *MetricError
+	if !errors.As(err, &me) || !strings.Contains(me.Msg, "efficiency_fps_gmacs") {
+		t.Fatalf("err = %v, want a mapping error naming only efficiency_fps_gmacs", err)
+	}
+
+	delete(required, "efficiency_fps_gmacs")
+	got, err := ForLeaderboard(metrics, required)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]float64{"map_50_95": 0.6098, "ap_50": 0.8614, "ap_75": 0.6885,
+		"giou_matched_map_50_95": 0.6063, "recall_50": 0.86, "precision_50": 1, "f1_50": 0.9247,
+		"detection_rate": 0.86, "mean_iou": 0.7363}
+	if len(got) != len(want) {
+		t.Fatalf("keys %v, want %d", mapKeys(got), len(want))
+	}
+	for k, v := range want {
+		if g, _ := got[k].(float64); math.Abs(g-v) > 5e-4 {
+			t.Errorf("%s = %v, want ~%v", k, got[k], v)
+		}
+	}
+}
+
+// Every metric the UI's dataset form offers for a bounding_box dataset
+// (ui-dx evaluator-metrics.util.ts BOUNDING_BOX_METRICS) must map to something
+// the detection evaluator reports, or a dataset that picks it can never post
+// a result.
+func TestEveryUIDetectionMetricMaps(t *testing.T) {
+	ui := []string{"map_50_95", "map_50_95_giou", "ap_50", "ap_75", "precision_50", "recall_50", "f1_50",
+		"precision_75", "recall_75", "f1_75", "detection_rate", "avg_boxes_per_image",
+		"mean_iou_all_images", "median_iou_all_images", "p25_iou_all_images", "mean_giou_all_images"}
+	required := map[string]catalogue.MetricSpec{}
+	for _, k := range ui {
+		required[k] = catalogue.MetricSpec{Name: k, Min: -1, Max: 1}
+	}
+	got, err := ForLeaderboard(evalMetrics(t, "detection_kidney_rhv_onnx"), required)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(ui) {
+		t.Fatalf("mapped %d of %d UI metrics: %v", len(got), len(ui), mapKeys(got))
 	}
 }

@@ -38,6 +38,35 @@ type dataset struct {
 	Paths       map[string]string   // path in the dataset -> decrypted file
 }
 
+// cloudAccess is how a job reaches GCS and Cloud KMS for its dataset. A nil
+// field uses the real service; tests set them to local fakes.
+type cloudAccess struct {
+	list   func(ctx context.Context, bucket, prefix string) ([]string, error)
+	get    func(ctx context.Context, bucket, object string) ([]byte, error)
+	unwrap func(ctx context.Context, keyVersion, wrappedDEKB64 string) ([]byte, error)
+}
+
+func (c cloudAccess) listObjects(ctx context.Context, bucket, prefix string) ([]string, error) {
+	if c.list != nil {
+		return c.list(ctx, bucket, prefix)
+	}
+	return gcp.ListObjects(ctx, bucket, prefix)
+}
+
+func (c cloudAccess) download(ctx context.Context, bucket, object string) ([]byte, error) {
+	if c.get != nil {
+		return c.get(ctx, bucket, object)
+	}
+	return gcp.DownloadObjectBytes(ctx, bucket, object)
+}
+
+func (c cloudAccess) unwrapDEK(ctx context.Context, keyVersion, wrappedDEKB64 string) ([]byte, error) {
+	if c.unwrap != nil {
+		return c.unwrap(ctx, keyVersion, wrappedDEKB64)
+	}
+	return gcp.AsymmetricDecrypt(ctx, keyVersion, wrappedDEKB64)
+}
+
 // datasetObject is one encrypted object and its manifest.
 type datasetObject struct {
 	Rel      string // path inside the dataset folder; the plaintext is written there
@@ -116,7 +145,8 @@ func planDataset(names []string, prefix string) (objects []datasetObject, gt dat
 
 // pickGroundTruth chooses among the tables in the dataset's root folder: the
 // one named like a ground truth (ground_truth.csv, labels.json, gt.tsv, ...),
-// else the only table.
+// else the one whose name contains "ground truth" (benchmark_ground_truth.csv
+// next to other tables), else the only table.
 func pickGroundTruth(tables []datasetObject) (datasetObject, error) {
 	var named []datasetObject
 	for _, want := range groundTruthNames {
@@ -127,6 +157,13 @@ func pickGroundTruth(tables []datasetObject) (datasetObject, error) {
 		}
 		if len(named) > 0 {
 			break
+		}
+	}
+	if len(named) == 0 {
+		for _, t := range tables {
+			if strings.Contains(normBase(t.Rel), "groundtruth") {
+				named = append(named, t)
+			}
 		}
 	}
 	switch {
@@ -193,7 +230,7 @@ func (m *Manager) fetchAndDecryptDataset(ctx context.Context, uuid, destDir stri
 	masks := kind == gtMask
 	bucket := m.cfg.DatasetsBucket
 	prefix := uuid + "/"
-	names, err := gcp.ListObjects(ctx, bucket, prefix)
+	names, err := m.cloud.listObjects(ctx, bucket, prefix)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: list dataset folder: %w", err)
 	}
@@ -324,7 +361,7 @@ func (m *Manager) decryptDatasetObject(ctx context.Context, bucket string, obj d
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return nil, err
 	}
-	mbytes, err := gcp.DownloadObjectBytes(ctx, bucket, obj.Manifest)
+	mbytes, err := m.cloud.download(ctx, bucket, obj.Manifest)
 	if err != nil {
 		return nil, fmt.Errorf("download manifest: %w", err)
 	}
@@ -338,14 +375,14 @@ func (m *Manager) decryptDatasetObject(ctx context.Context, bucket string, obj d
 	if man.Schema != "tanuh-enc-dataset-v1" {
 		return nil, fmt.Errorf("unsupported manifest schema %q", man.Schema)
 	}
-	dek, err := gcp.AsymmetricDecrypt(ctx, man.KMSKeyVersion, man.WrappedDEK)
+	dek, err := m.cloud.unwrapDEK(ctx, man.KMSKeyVersion, man.WrappedDEK)
 	if err != nil {
 		return nil, fmt.Errorf("KMS unwrap: %w", err)
 	}
 	if len(dek) != 32 {
 		return nil, fmt.Errorf("unwrapped DEK is %d bytes, want 32", len(dek))
 	}
-	ct, err := gcp.DownloadObjectBytes(ctx, bucket, obj.Cipher)
+	ct, err := m.cloud.download(ctx, bucket, obj.Cipher)
 	if err != nil {
 		return nil, fmt.Errorf("download ciphertext: %w", err)
 	}

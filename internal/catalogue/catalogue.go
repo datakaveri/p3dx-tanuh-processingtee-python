@@ -106,13 +106,38 @@ func ParseItem(raw []byte) (Spec, error) {
 	s := Spec{
 		ID:              strings.TrimSpace(str(item["id"])),
 		Name:            name,
-		TaskType:        bucket,
+		TaskType:        CanonicalBucket(bucket),
 		ClassNames:      classNames(item["class_names"]),
 		PrimaryMetric:   str(item["primaryMetric"]),
 		SecondaryMetric: str(item["secondaryMetric"]),
 	}
 	s.DatasetMetrics, _ = item["datasetMetrics"].(map[string]any)
 	return s, nil
+}
+
+// bucketAliases maps other names for a problem type to its evaluator bucket.
+// The UI's dataset form saves detection datasets as "bounding_box".
+var bucketAliases = map[string]string{
+	"binary":                "binary_classification",
+	"multiclass":            "multiclass_classification",
+	"detection":             "object_detection",
+	"bounding_box":          "object_detection",
+	"bounding_boxes":        "object_detection",
+	"bbox":                  "object_detection",
+	"semantic_segmentation": "segmentation",
+}
+
+// CanonicalBucket turns a catalogue problem type into its evaluator bucket
+// name: lower case, hyphens and spaces as underscores ("Object-Detection" ->
+// "object_detection"), then the aliases above. Unknown names pass through,
+// so a missing evaluator still fails with the name the catalogue gave.
+func CanonicalBucket(name string) string {
+	b := strings.ToLower(strings.TrimSpace(name))
+	b = strings.Join(strings.FieldsFunc(b, func(r rune) bool { return r == '-' || r == '_' || r == ' ' }), "_")
+	if alias, ok := bucketAliases[b]; ok {
+		return alias
+	}
+	return b
 }
 
 // Validate checks the fields a job cannot run without.

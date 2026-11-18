@@ -64,8 +64,13 @@ var (
 	boxW  = []string{"w", "width", "bbox_w", "bbox_width", "box_w", "box_width"}
 	boxH  = []string{"h", "height", "bbox_h", "bbox_height", "box_h", "box_height"}
 	// Box columns win over these when picking the file and class columns.
-	boxIDNames = []string{"file", "filename", "file_name", "filepath", "file_path", "path", "image", "image_id",
-		"image_name", "image_path", "img", "id", "name", "sample", "sample_id", "case_id"}
+	boxIDNames = []string{"file", "filename", "file_name", "filepath", "file_path", "path", "relative_path",
+		"image", "image_id", "image_name", "image_path", "image_file", "img",
+		"dicom", "dicom_file", "dicom_path", "dcm", "dcm_file", "dcm_path",
+		"id", "name", "sample", "sample_id", "case_id"}
+	// boxIDHints are substrings tried when no column has an exact id name
+	// (e.g. the kidney benchmark's "dcm_path"), as for classification.
+	boxIDHints    = []string{"path", "file", "image", "dicom", "dcm"}
 	boxClassNames = []string{"class", "label", "category", "class_id", "category_id", "class_name", "category_name",
 		"class_index", "label_id", "cls", "target"}
 )
@@ -154,6 +159,17 @@ func boxesFromRows(format string, header []string, rows [][]string, firstLine in
 		used[c] = true
 	}
 	idCol := find(boxIDNames)
+	if idCol < 0 {
+	hints:
+		for _, hint := range boxIDHints {
+			for i, h := range norm {
+				if !used[i] && strings.Contains(h, hint) {
+					idCol = i
+					break hints
+				}
+			}
+		}
+	}
 	if idCol < 0 {
 		return nil, fmt.Errorf("cannot find the file column in header %q (name it e.g. file or image)", header)
 	}

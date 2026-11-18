@@ -30,11 +30,23 @@ var metricAliases = map[string][]string{
 	// object detection (catalogue keys are slugs of names like "mAP@[0.5:0.95]" -> map_0_5_0_95).
 	// The detection evaluator reports mean_iou itself, and an identity match wins over the
 	// segmentation alias above.
-	"map":       {"map_0_5_0_95", "map_50_95", "map_0_50_0_95", "mean_average_precision", "coco_map"},
-	"ap50":      {"ap_0_5", "ap_50", "ap_0_50", "map_0_5", "map_50", "map50"},
-	"ap75":      {"ap_0_75", "ap_75", "map_0_75", "map_75", "map75"},
-	"map_giou":  {"giou_matched_map_0_5_0_95", "giou_map", "map_giou_0_5_0_95", "giou_matched_map"},
-	"recall_50": {"recall_0_5", "ar_0_5", "ar50", "ar_50"},
+	"map":  {"map_0_5_0_95", "map_50_95", "map_0_50_0_95", "mean_average_precision", "coco_map"},
+	"ap50": {"ap_0_5", "ap_50", "ap_0_50", "map_0_5", "map_50", "map50"},
+	"ap75": {"ap_0_75", "ap_75", "map_0_75", "map_75", "map75"},
+	// Keys after the first column of each line are also the UI dataset form's
+	// (evaluator-metrics.util.ts BOUNDING_BOX_METRICS).
+	"map_giou":       {"giou_matched_map_0_5_0_95", "giou_matched_map_50_95", "giou_map", "map_giou_0_5_0_95", "giou_matched_map", "map_50_95_giou", "giou_map_50_95"},
+	"recall_50":      {"recall_0_5", "ar_0_5", "ar50", "ar_50"},
+	"precision_50":   {"precision_0_5", "precision50"},
+	"f1_50":          {"f1_0_5", "f1_score_0_5", "f150"},
+	"recall_75":      {"recall_0_75", "ar_0_75", "ar75", "ar_75"},
+	"precision_75":   {"precision_0_75", "precision75"},
+	"f1_75":          {"f1_0_75", "f1_score_0_75", "f175"},
+	"detection_rate": {"detection_rate_0_5"},
+	"mean_iou":       {"mean_iou_all_images"},
+	"median_iou":     {"median_iou_all_images"},
+	"p25_iou":        {"p25_iou_all_images"},
+	"mean_giou":      {"mean_giou_all_images"},
 }
 
 var aliasToStandard = func() map[string]string {

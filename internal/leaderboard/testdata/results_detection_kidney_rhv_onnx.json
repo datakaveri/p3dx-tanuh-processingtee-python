@@ -1,0 +1,53 @@
+{
+  "status": "success",
+  "task_type": "object_detection",
+  "num_samples": 200,
+  "num_gt_boxes": 200,
+  "num_pred_boxes": 172,
+  "class_names": [
+    "kidney"
+  ],
+  "metrics": {
+    "map": 0.6097713178861945,
+    "ap50": 0.8613861386138614,
+    "ap75": 0.6884663188153117,
+    "map_giou": 0.6063211549217689,
+    "recall_50": 0.86,
+    "precision_50": 1.0,
+    "precision_75": 0.8430232558139535,
+    "recall_75": 0.725,
+    "detection_rate": 0.86,
+    "avg_boxes_per_image": 0.86,
+    "mean_iou": 0.736283457153493,
+    "median_iou": 0.8661766192832825,
+    "p25_iou": 0.7311269187976677,
+    "mean_giou": 0.5950739807559242,
+    "f1_50": 0.924731182795699,
+    "f1_75": 0.7795698924731183
+  },
+  "per_class": {
+    "kidney": {
+      "num_gt": 200,
+      "num_pred": 172,
+      "ap": 0.6097713178861945,
+      "ap50": 0.8613861386138614,
+      "ap75": 0.6884663188153117,
+      "recall_50": 0.86
+    }
+  },
+  "predictions_format": {
+    "file_column": "file",
+    "box_format": "xyxy",
+    "box_columns": [
+      "x_min",
+      "y_min",
+      "x_max",
+      "y_max"
+    ],
+    "score_column": "score",
+    "class_column": "class",
+    "ignored_files": 0,
+    "images_with_predictions": 172,
+    "looks_normalised": false
+  }
+}

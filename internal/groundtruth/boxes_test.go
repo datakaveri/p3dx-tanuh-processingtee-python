@@ -98,3 +98,28 @@ func TestWriteCanonicalBoxes(t *testing.T) {
 		t.Fatalf("%q", raw)
 	}
 }
+
+// The Ultrasound Kidney benchmark's ground truth (benchmark_ground_truth.csv,
+// as its Croissant declares it) names the image column "dcm_path" and has no
+// class column: one kidney box per image.
+func TestBoxesKidneyBenchmarkHeader(t *testing.T) {
+	csv := "patient_id,side,hospital,source,dcm_path,image_width,image_height,xmin,ymin,xmax,ymax,xmin_norm,ymin_norm,xmax_norm,ymax_norm,depth_cm\n" +
+		"RHV_1067,RIGHT,Mahajan,automated,Benchmarking_Confirmed/automated_labels_benchmarking/RHV_1067_RIGHT/RHV_1067_RIGHT.dcm,860,725,191.59,194.62,610.60,412.79,0.22,0.26,0.71,0.56,19.38\n" +
+		"RHV_0167,LEFT,Mahajan,manual,Benchmarking_Confirmed/manual_annotation_finalized/RHV_0167_LEFT/RHV_0167_LEFT.dcm,945,584,177.04,186.64,654.28,434.91,0.18,0.31,0.69,0.74,17.49\n"
+	tbl, err := ReadBoxes("benchmark_ground_truth.csv", []byte(csv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tbl.IDColumn != "dcm_path" {
+		t.Fatalf("id column = %q, want dcm_path", tbl.IDColumn)
+	}
+	files := []string{"automated_labels_benchmarking/RHV_1067_RIGHT/RHV_1067_RIGHT.dcm",
+		"manual_annotation_finalized/RHV_0167_LEFT/RHV_0167_LEFT.dcm"}
+	res, err := MatchBoxes(tbl, []string{"kidney"}, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 2 || len(res.Unmatched) != 0 {
+		t.Fatalf("matched %d rows, unmatched %v", len(res.Rows), res.Unmatched)
+	}
+}

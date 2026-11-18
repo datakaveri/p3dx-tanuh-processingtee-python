@@ -234,3 +234,53 @@ func TestFetchSpecRejectsAnotherItem(t *testing.T) {
 		t.Fatalf("mismatched id: err = %v", err)
 	}
 }
+
+// Problem types arrive spelled in several ways: the UI's dataset form saves
+// detection as "bounding_box", and providers write "object-detection".
+func TestCanonicalBucket(t *testing.T) {
+	cases := map[string]string{
+		"object_detection":      "object_detection",
+		"object-detection":      "object_detection",
+		" Object Detection ":    "object_detection",
+		"bounding_box":          "object_detection",
+		"bounding-box":          "object_detection",
+		"bbox":                  "object_detection",
+		"detection":             "object_detection",
+		"binary_classification": "binary_classification",
+		"Binary-Classification": "binary_classification",
+		"multiclass":            "multiclass_classification",
+		"semantic-segmentation": "segmentation",
+		"segmentation":          "segmentation",
+		"regression":            "regression", // unknown: passed through
+		"":                      "",
+	}
+	for in, want := range cases {
+		if got := CanonicalBucket(in); got != want {
+			t.Errorf("CanonicalBucket(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// item_kidney_live.json is the production cat/item response for the
+// Ultrasound Kidney Detection Dataset (2026-11-03, problemStatement
+// "bounding_box"), with class_names ["kidney"] added as its provider declares
+// it. A one-class detection dataset must validate.
+func TestKidneyDetectionOneClass(t *testing.T) {
+	s := load(t, "kidney_live")
+	if s.TaskType != "object_detection" {
+		t.Fatalf("bucket = %q, want object_detection", s.TaskType)
+	}
+	if err := s.Validate(); err != nil {
+		t.Fatalf("one-class detection rejected: %v", err)
+	}
+	for _, bucket := range []string{"bounding_box", "object-detection"} {
+		raw := []byte(`{"result":[{"problemStatement":"` + bucket + `","class_names":["kidney"]}]}`)
+		s, err := ParseItem(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Validate(); err != nil {
+			t.Errorf("%s with one class: %v", bucket, err)
+		}
+	}
+}

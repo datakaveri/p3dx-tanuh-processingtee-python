@@ -463,6 +463,31 @@ class DetectionEvaluator(unittest.TestCase):
         self.assertAlmostEqual(m["map"], (6 * 1.0 + 4 * (51 * 0.5 / 101)) / 10, places=6)
         self.assertAlmostEqual(m["mean_iou"], (88 * 100 / 11200 + 1.0) / 2, places=6)
 
+    def test_counting_metrics(self):
+        # a found with IoU 0.7857 (a match at 0.50, not at 0.75); b found exactly; one extra
+        # box on c (no objects). As the kidney dataset's own evaluator defines them:
+        # precision = matched / predicted boxes, detection_rate = images with any box.
+        preds = [["a.png", 22, 10, 122, 110, 0.9, 0], ["b.png", 50, 50, 150, 100, 0.8, 0],
+                 ["c.png", 0, 0, 30, 30, 0.5, 0]]
+        code, res, out = run_det(DET_GT, PRED_HDR, preds, KIDNEY)
+        self.assertEqual(code, 0, out)
+        m = res["metrics"]
+        self.assertAlmostEqual(m["precision_50"], 2 / 3)
+        self.assertAlmostEqual(m["recall_50"], 1.0)
+        self.assertAlmostEqual(m["f1_50"], 0.8)
+        self.assertAlmostEqual(m["precision_75"], 2 / 3)
+        self.assertAlmostEqual(m["recall_75"], 1.0)
+        self.assertAlmostEqual(m["detection_rate"], 1.0)
+        self.assertAlmostEqual(m["avg_boxes_per_image"], 1.0)
+        self.assertAlmostEqual(m["median_iou"], (88 * 100 / 11200 + 1.0) / 2, places=6)
+        # a missed box counts as IoU 0 and GIoU -1
+        code, res, out = run_det(DET_GT, PRED_HDR, [["b.png", 50, 50, 150, 100, 0.8, 0]], KIDNEY)
+        m = res["metrics"]
+        self.assertAlmostEqual(m["detection_rate"], 1 / 3)
+        self.assertAlmostEqual(m["mean_iou"], 0.5)
+        self.assertAlmostEqual(m["mean_giou"], 0.0)
+        self.assertAlmostEqual(m["p25_iou"], 0.25)
+
     def test_false_positive_on_empty_image_lowers_ap(self):
         preds = [["a.png", 10, 10, 110, 110, 0.5, 0], ["b.png", 50, 50, 150, 100, 0.4, 0],
                  ["c.png", 0, 0, 30, 30, 0.95, 0]]                      # c has no objects

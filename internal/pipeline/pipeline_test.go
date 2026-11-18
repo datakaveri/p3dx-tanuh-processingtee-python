@@ -180,6 +180,9 @@ func TestPlanDatasetGroundTruthChoice(t *testing.T) {
 		"named among several tables": {encrypted("u/a.jpg", "u/metadata.csv", "u/Ground-Truth.CSV"), "Ground-Truth.CSV"},
 		"labels file":                {encrypted("u/a.jpg", "u/stats.json", "u/labels.jsonl"), "labels.jsonl"},
 		"the only table":             {encrypted("u/a.dcm", "u/ocs_ground_truth_v2.csv"), "ocs_ground_truth_v2.csv"},
+		// The Ultrasound Kidney layout: the ground truth sits next to other tables.
+		"ground truth in a longer name": {encrypted("u/a/a.dcm", "u/benchmark_ground_truth.csv",
+			"u/benchmarking_patient_tracking_confirmed.csv", "u/croissant.json"), "benchmark_ground_truth.csv"},
 	}
 	for name, c := range cases {
 		_, gt, err := planDataset(c.names, "u/")
@@ -195,6 +198,7 @@ func TestPlanDatasetRejects(t *testing.T) {
 		"ground truth only in subfolder":  encrypted("u/a.jpg", "u/meta/ground_truth.csv"),
 		"two tables, none named":          encrypted("u/a.jpg", "u/x.csv", "u/y.json"),
 		"two ground truths":               encrypted("u/a.jpg", "u/ground_truth.csv", "u/ground_truth.json"),
+		"two longer ground-truth names":   encrypted("u/a.jpg", "u/train_ground_truth.csv", "u/test_ground_truth.csv"),
 		"no data files":                   encrypted("u/ground_truth.csv"),
 		"only unusable paths besides gt":  encrypted("u/ground_truth.csv", "u/../x.jpg", "u/a//b.jpg"),
 		"manifests without their objects": {"u/a.jpg.manifest.json", "u/ground_truth.csv.manifest.json"},

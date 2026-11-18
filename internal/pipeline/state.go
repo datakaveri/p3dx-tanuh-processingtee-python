@@ -34,6 +34,7 @@ type State struct {
 type Manager struct {
 	cfg        config.Config
 	evaluators evaluator.Source // where each bucket's evaluate.py comes from
+	cloud      cloudAccess      // GCS and KMS for the dataset (real services unless a test sets it)
 
 	mu      sync.Mutex
 	state   State
