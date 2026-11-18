@@ -12,6 +12,9 @@ import (
 	"github.com/yourorg/ratls/pkg/ratls"
 )
 
+// maxPayloadBytes bounds the dispatch payload (base64 model + weights).
+const maxPayloadBytes = 2 << 30 // 2 GiB
+
 func main() {
 	audience     := getEnv("RATLS_AUDIENCE",  "ratls-buffer-tee")
 	listenAddr   := getEnv("LISTEN_ADDR",     ":443")
@@ -151,7 +154,7 @@ func handleLoadModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bodyBytes, err := io.ReadAll(r.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxPayloadBytes))
 	if err != nil {
 		log.Printf("gpu-cs: read payload error: %v", err)
 		http.Error(w, "read payload failed", http.StatusBadRequest)
